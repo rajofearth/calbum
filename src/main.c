@@ -232,11 +232,59 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
         if (image_select_offset(&g_state,1)) InvalidateRect(hwnd,NULL,TRUE);
         return;
     }
+
+    // Check scrollbar
+    int ms = gal_max_scroll(&g_state);
+    if (ms > 0 && x >= g_state.window_width - 16) {
+        g_state.is_dragging_scrollbar = 1;
+        g_state.drag_start_y = (float)y;
+        g_state.drag_start_scroll_y = g_state.scroll_current_y;
+        SetCapture(hwnd);
+        return;
+    }
+
     int idx;
     if (gal_hit_test(&g_state, x, y, &idx)) {
         g_state.selected_index = idx;
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd,NULL,TRUE);
+    }
+}
+
+static void on_mouse_move(HWND hwnd, int x, int y)
+{
+    (void)x;
+    if (g_state.is_dragging_scrollbar) {
+        int ms = gal_max_scroll(&g_state);
+        if (ms > 0) {
+            float track_h = (float)g_state.window_height - 16.0f;
+            float thumb_h = ((float)g_state.window_height / (float)(ms + g_state.window_height)) * track_h;
+            if (thumb_h < 20.0f) thumb_h = 20.0f;
+            
+            float dy = (float)y - g_state.drag_start_y;
+            float scrollable_track = track_h - thumb_h;
+            
+            if (scrollable_track > 0.0f) {
+                float scroll_delta = dy * (float)ms / scrollable_track;
+                g_state.scroll_current_y = g_state.drag_start_scroll_y + scroll_delta;
+                
+                if (g_state.scroll_current_y < 0.0f) g_state.scroll_current_y = 0.0f;
+                if (g_state.scroll_current_y > (float)ms) g_state.scroll_current_y = (float)ms;
+                g_state.scroll_target_y = g_state.scroll_current_y;
+                
+                g_state.needs_redraw = 1;
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+        }
+    }
+}
+
+static void on_lbutton_up(HWND hwnd, int x, int y)
+{
+    (void)hwnd; (void)x; (void)y;
+    if (g_state.is_dragging_scrollbar) {
+        g_state.is_dragging_scrollbar = 0;
+        ReleaseCapture();
     }
 }
 
@@ -279,6 +327,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     case WM_KEYDOWN:         on_keydown(hwnd, (int)wParam); return 0;
     case WM_LBUTTONDOWN:     on_lbutton_down(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_LBUTTONDBLCLK:   on_lbutton_dblclk(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
+    case WM_MOUSEMOVE:       on_mouse_move(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
+    case WM_LBUTTONUP:       on_lbutton_up(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_MOUSEWHEEL:      on_mousewheel(hwnd, GET_WHEEL_DELTA_WPARAM(wParam)); return 0;
     case WM_DROPFILES:       on_drop_files(hwnd, (HDROP)wParam); return 0;
     case WM_CALBUM_LOAD_COMPLETE: on_thumb_complete(hwnd, wParam, lParam); return 0;

@@ -247,6 +247,11 @@ typedef struct AppState {
     int64_t     perf_counter_freq;
     int64_t     last_tick;
 
+    // Interactive State
+    int         is_dragging_scrollbar;
+    float       drag_start_y;
+    float       drag_start_scroll_y;
+
     // File monitor thread
     HANDLE      monitor_thread;
     HANDLE      monitor_stop_event;
