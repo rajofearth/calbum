@@ -269,6 +269,7 @@ typedef struct AppState {
     int         is_dragging_scrollbar;
     float       drag_start_y;
     float       drag_start_scroll_y;
+    int         sort_menu_open;
 
     // File monitor thread
     HANDLE      monitor_thread;

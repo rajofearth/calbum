@@ -15,7 +15,7 @@ typedef struct {
     int last_visible;
 } GridLayout;
 
-#define TOP_BAR_HEIGHT 40
+#define TOP_BAR_HEIGHT 0
 
 static void gal_calc_layout(AppState *s, GridLayout *out)
 {
@@ -109,22 +109,8 @@ void gal_apply_sort(AppState *s)
     s->needs_redraw = 1;
 }
 
-static void gal_show_sort_menu(AppState *s, int x, int y)
+static void gal_apply_sort_option(AppState *s, int cmd)
 {
-    HMENU hMenu = CreatePopupMenu();
-    AppendMenuW(hMenu, MF_STRING | (s->sort_mode == SORT_DATE_CREATED ? MF_CHECKED : 0), 1, L"Date created");
-    AppendMenuW(hMenu, MF_STRING | (s->sort_mode == SORT_DATE_MODIFIED ? MF_CHECKED : 0), 2, L"Date modified");
-    AppendMenuW(hMenu, MF_STRING | (s->sort_mode == SORT_SIZE ? MF_CHECKED : 0), 3, L"Size");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(hMenu, MF_STRING | (!s->sort_descending ? MF_CHECKED : 0), 4, L"Ascending");
-    AppendMenuW(hMenu, MF_STRING | (s->sort_descending ? MF_CHECKED : 0), 5, L"Descending");
-    
-    POINT pt = { x, y };
-    ClientToScreen(s->hwnd, &pt);
-    
-    int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, s->hwnd, NULL);
-    DestroyMenu(hMenu);
-    
     if (cmd >= 1 && cmd <= 3) {
         if (cmd == 1) s->sort_mode = SORT_DATE_CREATED;
         if (cmd == 2) s->sort_mode = SORT_DATE_MODIFIED;
@@ -139,15 +125,36 @@ static void gal_show_sort_menu(AppState *s, int x, int y)
 int gal_handle_ui_click(AppState *s, int x, int y)
 {
     if (s->view_mode != VIEW_GALLERY) return 0;
-    if (y >= TOP_BAR_HEIGHT) return 0;
     
-    // Sort Button hit test (x: 10->90, y: 5->35)
-    if (x >= 10 && x <= 90 && y >= 5 && y <= 35) {
-        gal_show_sort_menu(s, 10, 35);
+    int btn_w = 80;
+    int btn_h = 30;
+    int btn_x = s->window_width - btn_w - 20; // Top right
+    int btn_y = 10;
+
+    if (s->sort_menu_open) {
+        int menu_w = 150;
+        int menu_h = 5 * 30;
+        int menu_x = btn_x + btn_w - menu_w;
+        int menu_y = btn_y + btn_h + 5;
+        
+        if (x >= menu_x && x <= menu_x + menu_w && y >= menu_y && y <= menu_y + menu_h) {
+            int row = (y - menu_y) / 30;
+            gal_apply_sort_option(s, row + 1);
+        }
+        s->sort_menu_open = 0;
+        s->needs_redraw = 1;
+        return 1;
+    }
+
+    // Sort Button hit test
+    if (x >= btn_x && x <= btn_x + btn_w && y >= btn_y && y <= btn_y + btn_h) {
+        s->sort_menu_open = 1;
+        s->needs_redraw = 1;
         return 1;
     }
     
-    return 1; // Clicked top bar background, swallow click
+    // Allow clicking thumbnails behind transparent area
+    return 0;
 }
 
 void gal_update_layout(AppState *s)
@@ -183,7 +190,7 @@ void gal_scroll(AppState *s, float delta)
 int gal_hit_test(AppState *s, int x, int y, int *out_index)
 {
     if (s->view_mode != VIEW_GALLERY || s->count == 0) return 0;
-    if (y < TOP_BAR_HEIGHT) return 0; // Hit top bar, not grid
+    if (s->sort_menu_open) return 0; // Don't allow clicking thumbnails when menu is open
     GridLayout lay;
     gal_calc_layout(s, &lay);
 
@@ -295,27 +302,57 @@ void gal_render_gallery(HDC hdc, AppState *s)
         inst_count++;
     }
 
-    // Draw Top Bar background
-    instances[inst_count].x = 0.0f;
-    instances[inst_count].y = 0.0f;
-    instances[inst_count].w = (float)s->window_width;
-    instances[inst_count].h = (float)TOP_BAR_HEIGHT;
+    int btn_w = 80;
+    int btn_h = 30;
+    int btn_x = s->window_width - btn_w - 20;
+    int btn_y = 10;
+
+    // Draw Sort Button BG (translucent)
+    instances[inst_count].x = (float)btn_x;
+    instances[inst_count].y = (float)btn_y;
+    instances[inst_count].w = (float)btn_w;
+    instances[inst_count].h = (float)btn_h;
     instances[inst_count].tex_index = -3; // 0.2 gray
-    instances[inst_count].opacity = 1.0f;
+    instances[inst_count].opacity = 0.8f;
     inst_count++;
 
-    // Draw Sort Button BG
-    instances[inst_count].x = 10.0f;
-    instances[inst_count].y = 5.0f;
-    instances[inst_count].w = 80.0f;
-    instances[inst_count].h = 30.0f;
-    instances[inst_count].tex_index = -4; // 0.5 gray
-    instances[inst_count].opacity = 1.0f;
-    inst_count++;
+    if (s->sort_menu_open) {
+        int menu_w = 150;
+        int menu_h = 5 * 30;
+        int menu_x = btn_x + btn_w - menu_w;
+        int menu_y = btn_y + btn_h + 5;
+        
+        // Menu BG
+        instances[inst_count].x = (float)menu_x;
+        instances[inst_count].y = (float)menu_y;
+        instances[inst_count].w = (float)menu_w;
+        instances[inst_count].h = (float)menu_h;
+        instances[inst_count].tex_index = -3; 
+        instances[inst_count].opacity = 0.95f;
+        inst_count++;
+    }
 
     r_draw_instances(s, instances, inst_count);
 
-    r_draw_text(s, L"Sort \x25BC", 25.0f, 10.0f, 100.0f, 30.0f);
+    r_draw_text(s, L"Sort \x25BC", (float)(btn_x + 15), (float)(btn_y + 5), (float)btn_w, (float)btn_h);
+
+    if (s->sort_menu_open) {
+        int menu_w = 150;
+        int menu_x = btn_x + btn_w - menu_w;
+        int menu_y = btn_y + btn_h + 5;
+        
+        const wchar_t* opts[] = {
+            s->sort_mode == SORT_DATE_CREATED ? L"\x2713 Date created" : L"  Date created",
+            s->sort_mode == SORT_DATE_MODIFIED ? L"\x2713 Date modified" : L"  Date modified",
+            s->sort_mode == SORT_SIZE ? L"\x2713 Size" : L"  Size",
+            !s->sort_descending ? L"\x2713 Ascending" : L"  Ascending",
+            s->sort_descending ? L"\x2713 Descending" : L"  Descending"
+        };
+        
+        for (int i = 0; i < 5; i++) {
+            r_draw_text(s, opts[i], (float)(menu_x + 10), (float)(menu_y + 5 + i * 30), (float)menu_w, 30.0f);
+        }
+    }
 
     r_present(s);
     s->needs_redraw = 0;
