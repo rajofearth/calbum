@@ -135,22 +135,60 @@ void gal_render_gallery(HDC hdc, AppState *s)
             aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
         }
 
+        if (s->selected_index == i) {
+            instances[inst_count].x = x - 4.0f;
+            instances[inst_count].y = y - 4.0f;
+            instances[inst_count].w = (float)(THUMB_SIZE + 8);
+            instances[inst_count].h = (float)(THUMB_SIZE + 8);
+            instances[inst_count].tex_index = -2; // White border
+            instances[inst_count].opacity = 1.0f;
+            inst_count++;
+        }
+
         instances[inst_count].x = x;
         instances[inst_count].y = y;
-        instances[inst_count].size = (float)THUMB_SIZE;
+        instances[inst_count].w = (float)THUMB_SIZE;
+        instances[inst_count].h = (float)THUMB_SIZE;
         instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : -1;
         instances[inst_count].opacity = 1.0f;
         
-        if (s->selected_index != -1 && s->selected_index != i) {
-            instances[inst_count].opacity = 0.5f;
-        }
-
         if (s->images[i].state == IMG_STATE_RESIDENT_GPU && s->images[i].texture_slot != -1) {
             s->tex_pool.last_used[s->images[i].texture_slot] = s->tex_pool.frame_counter;
         }
 
         inst_count++;
-        if (inst_count >= 4096) break;
+        if (inst_count >= 4092) break; // Leave room for scrollbar
+    }
+
+    // Draw Scrollbar
+    int ms = gal_max_scroll(s);
+    if (ms > 0) {
+        float track_x = (float)s->window_width - 12.0f;
+        float track_y = 8.0f;
+        float track_w = 6.0f;
+        float track_h = (float)s->window_height - 16.0f;
+
+        // Track
+        instances[inst_count].x = track_x;
+        instances[inst_count].y = track_y;
+        instances[inst_count].w = track_w;
+        instances[inst_count].h = track_h;
+        instances[inst_count].tex_index = -3;
+        instances[inst_count].opacity = 1.0f;
+        inst_count++;
+
+        // Thumb
+        float thumb_h = (s->window_height / (float)(ms + s->window_height)) * track_h;
+        if (thumb_h < 20.0f) thumb_h = 20.0f;
+        float thumb_y = track_y + (s->scroll_current_y / (float)ms) * (track_h - thumb_h);
+
+        instances[inst_count].x = track_x;
+        instances[inst_count].y = thumb_y;
+        instances[inst_count].w = track_w;
+        instances[inst_count].h = thumb_h;
+        instances[inst_count].tex_index = -4;
+        instances[inst_count].opacity = 1.0f;
+        inst_count++;
     }
 
     r_draw_instances(s, instances, inst_count);

@@ -14,7 +14,7 @@ static const char* shader_src =
     "struct VS_INPUT {\n"
     "    uint vertex_id : SV_VertexID;\n"
     "    float2 pos     : INST_POS;\n"
-    "    float  size    : INST_SIZE;\n"
+    "    float2 size    : INST_SIZE;\n"
     "    int    tex_idx : INST_TEX;\n"
     "    float  opacity : INST_OPACITY;\n"
     "};\n"
@@ -40,7 +40,10 @@ static const char* shader_src =
     "Texture2DArray textures : register(t0);\n"
     "SamplerState samp : register(s0);\n"
     "float4 ps_main(PS_INPUT input) : SV_TARGET {\n"
-    "    if (input.tex_idx < 0) return float4(0.2, 0.2, 0.2, input.opacity);\n"
+    "    if (input.tex_idx == -2) return float4(1.0, 1.0, 1.0, input.opacity);\n"
+    "    if (input.tex_idx == -3) return float4(0.2, 0.2, 0.2, input.opacity);\n"
+    "    if (input.tex_idx == -4) return float4(0.5, 0.5, 0.5, input.opacity);\n"
+    "    if (input.tex_idx < 0) return float4(0.12, 0.12, 0.12, input.opacity);\n"
     "    float4 color = textures.Sample(samp, float3(input.uv, input.tex_idx));\n"
     "    return float4(color.rgb, input.opacity);\n"
     "}\n";
@@ -81,7 +84,7 @@ int r_init(AppState *s)
 
     D3D11_INPUT_ELEMENT_DESC ied[] = {
         { "INST_POS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(InstanceData, x), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-        { "INST_SIZE", 0, DXGI_FORMAT_R32_FLOAT, 0, offsetof(InstanceData, size), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+        { "INST_SIZE", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(InstanceData, w), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
         { "INST_TEX", 0, DXGI_FORMAT_R32_SINT, 0, offsetof(InstanceData, tex_index), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
         { "INST_OPACITY", 0, DXGI_FORMAT_R32_FLOAT, 0, offsetof(InstanceData, opacity), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
     };

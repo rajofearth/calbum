@@ -310,11 +310,12 @@ void  gal_tick_smooth_scroll(AppState *s);
 
 // renderer.c
 typedef struct {
-    float x, y;
-    float size;
+    float x;
+    float y;
+    float w;
+    float h;
     int   tex_index;
     float opacity;
-    float padding[3];
 } InstanceData;
 
 int  r_init(AppState *s);
