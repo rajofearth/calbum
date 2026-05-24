@@ -7,8 +7,8 @@
 // #included directly into build.c in dependency order, so visibility is
 // controlled by inclusion order, not by header files.
 // =========================================================================
-#define COBJMACROS
 #include <windows.h>
+#include <shlobj.h>
 #include <d3d11.h>
 #include <wincodec.h>
 #include <stdint.h>
@@ -32,6 +32,12 @@
 // Enums
 // -------------------------------------------------------------------------
 typedef enum { VIEW_GALLERY, VIEW_FULLIMAGE } ViewMode;
+
+typedef enum {
+    SORT_DATE_CREATED,
+    SORT_DATE_MODIFIED,
+    SORT_SIZE
+} SortMode;
 
 // -------------------------------------------------------------------------
 // Arena Bump Allocator — zero-fragmentation, O(1) alloc/free
@@ -163,11 +169,14 @@ typedef enum {
 typedef struct {
     wchar_t *path;
     wchar_t *filename;
-    int     full_width;
-    int     full_height;
-    int16_t texture_slot;   // Index into GPU texture pool, -1 if none
-    ImageState state;
-    int     thumb_requested;
+    uint64_t file_size;
+    uint64_t last_modified;
+    uint64_t created_time;
+    uint16_t full_width;
+    uint16_t full_height;
+    int16_t  texture_slot;   // Index into GPU texture pool, -1 if none
+    uint8_t  state;
+    uint8_t  thumb_requested;
 } ImageEntry;
 
 // Work item for background thumbnail loading
@@ -209,6 +218,8 @@ typedef struct AppState {
     // View mode
     ViewMode    view_mode;
     int         selected_index;
+    SortMode    sort_mode;
+    int         sort_descending;
 
     // Smooth scrolling (target vs visual)
     float       scroll_target_y;
@@ -225,6 +236,13 @@ typedef struct AppState {
     ID3D11DeviceContext*    d3d_context;
     IDXGISwapChain*         swap_chain;
     ID3D11RenderTargetView* rtv;
+
+    // D2D1 / DirectWrite Resources
+    struct ID2D1Factory*           d2d_factory;
+    struct ID2D1RenderTarget*      d2d_rtv;
+    struct IDWriteFactory*         dwrite_factory;
+    struct IDWriteTextFormat*      dwrite_format;
+    struct ID2D1SolidColorBrush*   d2d_brush;
 
     ID3D11VertexShader*     vs;
     ID3D11PixelShader*      ps;
@@ -307,6 +325,8 @@ DWORD WINAPI aw_worker_thread(LPVOID param);
 void  gal_render_gallery(HDC hdc, AppState *s);
 void  gal_render_fullimage(HDC hdc, AppState *s);
 int   gal_hit_test(AppState *s, int x, int y, int *out_index);
+int   gal_handle_ui_click(AppState *s, int x, int y);
+void  gal_apply_sort(AppState *s);
 void  gal_scroll(AppState *s, float delta);
 void  gal_update_layout(AppState *s);
 void  gal_open_full(AppState *s, int index);
@@ -332,3 +352,4 @@ int  r_alloc_texture_slot(AppState *s, int image_index);
 void r_upload_texture(AppState *s, int slot, void *bc1_data);
 void r_evict_texture(AppState *s, int slot);
 void r_draw_instances(AppState *s, void *instances, int count);
+void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h);

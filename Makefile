@@ -1,5 +1,5 @@
 CC      ?= gcc
-LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi
+LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
 CFLAGS_RELEASE = -O2 -mwindows -Wall -Wextra
 CFLAGS_DEBUG   = -O0 -mwindows -Wall -Wextra -Wpedantic -g
 

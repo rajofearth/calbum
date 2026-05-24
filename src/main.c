@@ -9,8 +9,6 @@
 // =========================================================================
 #include "types.h"
 #include <windowsx.h>
-#include <shellapi.h>
-#include <shlobj.h>
 #include <dwmapi.h>
 #include <stdlib.h>
 
@@ -116,12 +114,23 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 ImageEntry *e = &s->images[s->count];
                 e->path = p_full;
                 e->filename = p_name;
+                
+                WIN32_FILE_ATTRIBUTE_DATA wfad;
+                if (GetFileAttributesExW(p_full, GetFileExInfoStandard, &wfad)) {
+                    e->file_size = ((uint64_t)wfad.nFileSizeHigh << 32) | wfad.nFileSizeLow;
+                    e->last_modified = ((uint64_t)wfad.ftLastWriteTime.dwHighDateTime << 32) | wfad.ftLastWriteTime.dwLowDateTime;
+                    e->created_time = ((uint64_t)wfad.ftCreationTime.dwHighDateTime << 32) | wfad.ftCreationTime.dwLowDateTime;
+                } else {
+                    e->file_size = 0; e->last_modified = 0; e->created_time = 0;
+                }
+                
                 e->texture_slot = -1;
                 e->state = IMG_STATE_NEW;
                 e->thumb_requested = 0;
                 e->full_width = 0;
                 e->full_height = 0;
                 s->count++;
+                gal_apply_sort(s);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
             }
@@ -238,6 +247,11 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
 {
     if (g_state.view_mode == VIEW_FULLIMAGE) {
         if (image_select_offset(&g_state,1)) InvalidateRect(hwnd,NULL,TRUE);
+        return;
+    }
+
+    if (gal_handle_ui_click(&g_state, x, y)) {
+        InvalidateRect(hwnd, NULL, TRUE);
         return;
     }
 

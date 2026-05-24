@@ -22,7 +22,7 @@ static int skip_dir(const wchar_t *name) {
     return (name[0] == L'.' || name[0] == L'$');
 }
 
-static int append_entry(AppState *s, const wchar_t *full, const wchar_t *name)
+static int append_entry(AppState *s, const wchar_t *full, WIN32_FIND_DATAW *ffd)
 {
     if (s->count >= s->capacity) {
         int new_cap = s->capacity ? s->capacity * 2 : 256;
@@ -41,17 +41,20 @@ static int append_entry(AppState *s, const wchar_t *full, const wchar_t *name)
     }
 
     size_t full_sz = (wcslen(full) + 1) * sizeof(wchar_t);
-    size_t name_sz = (wcslen(name) + 1) * sizeof(wchar_t);
+    size_t name_sz = (wcslen(ffd->cFileName) + 1) * sizeof(wchar_t);
     wchar_t *p_full = (wchar_t *)arena_alloc(&s->arena, full_sz);
     wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
     if (!p_full || !p_name) return 0;
 
     wcscpy(p_full, full);
-    wcscpy(p_name, name);
+    wcscpy(p_name, ffd->cFileName);
 
     ImageEntry *e = &s->images[s->count];
     e->path = p_full;
     e->filename = p_name;
+    e->file_size = ((uint64_t)ffd->nFileSizeHigh << 32) | ffd->nFileSizeLow;
+    e->last_modified = ((uint64_t)ffd->ftLastWriteTime.dwHighDateTime << 32) | ffd->ftLastWriteTime.dwLowDateTime;
+    e->created_time = ((uint64_t)ffd->ftCreationTime.dwHighDateTime << 32) | ffd->ftCreationTime.dwLowDateTime;
     e->texture_slot = -1;
     e->state = IMG_STATE_NEW;
     e->thumb_requested = 0;
@@ -85,7 +88,7 @@ static void scan_recursive(const wchar_t *dir, AppState *s)
             if (!skip_dir(ffd.cFileName)) scan_recursive(full, s);
         } else {
             if (fs_has_image_extension(ffd.cFileName))
-                append_entry(s, full, ffd.cFileName);
+                append_entry(s, full, &ffd);
         }
     } while (FindNextFileW(h, &ffd));
     FindClose(h);

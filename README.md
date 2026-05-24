@@ -21,7 +21,9 @@
 - **Full-image view** — Zoom-to-fit display with aspect ratio preservation
 - **Drag-and-drop** — Drop any folder to browse its images
 - **Keyboard navigation** — Arrow keys, Home/End, Space/Enter, Escape
-- **Double-buffered rendering** — No flicker during paint
+- **Sort capability** — Sort images by Date Created, Date Modified, or Size
+- **Immersive Dark Mode** — Title bar matches the dark UI aesthetic
+- **Hardware-accelerated rendering** — Double-buffered Direct2D/Direct3D 11 for tear-free 60+ FPS drawing
 
 ### Supported Image Formats
 
@@ -99,30 +101,37 @@ The project follows **data-oriented design** principles:
 - **Single translation unit (unity build)** — All `.c` files are `#include`d into `build.c`, enabling aggressive cross-module optimization and sub-second compile times
 - **Immediate-mode rendering** — UI is drawn fresh every frame; no retained widget tree
 - **Lazy loading** — Thumbnails and full images are loaded on demand, not at startup
-- **Minimal dependencies** — Only the Win32 API and [stb_image.h](https://github.com/nothings/stb) (single-file header library)
+- **Minimal dependencies** — Primarily Win32/COM APIs (Direct2D, DirectWrite, Direct3D 11, WIC) and lightweight single-file integrations
 
 ### Module Map
 
 | Module               | Responsibility                                |
 |----------------------|----------------------------------------------|
-| `calbum.c`           | Entry point (`WinMain`), window procedure, event dispatch |
-| `calbum.h`           | Shared types (`AppState`, `ImageEntry`), function declarations |
+| `main.c`             | Entry point (`WinMain`), window procedure, event dispatch |
+| `types.h`            | Shared types (`AppState`, `ImageEntry`), function declarations |
+| `app.c`              | Core application state management and sorting logic |
 | `file_scanner.c`     | Recursive directory scan, image extension filtering |
-| `image_loader.c`     | Thumbnail/full-image loading via stb_image, HBITMAP conversion |
-| `gallery.c`          | Gallery grid layout, full-image viewer, hit testing, scrolling |
-| `build.c`            | Unity build master — includes `stb_image.h` implementation + all sources |
+| `asset_worker.c`     | Background thread for decoding images and generating thumbnails via WIC |
+| `image_loader.c`     | WIC-based image loading and COM interface utilities |
+| `renderer.c`         | Direct2D / DirectWrite and D3D11 rendering context, drawing primitives |
+| `gallery.c`          | Gallery grid layout, UI interaction, full-image viewer, scrolling |
+| `build.c`            | Unity build master — includes all sources |
 
 ### Directory Layout
 
 ```
 calbum/
 ├── build.c            # Unity build entry point
-├── calbum.c           # Application main
-├── calbum.h           # Header / types
-├── file_scanner.c     # File system scanning
-├── gallery.c          # Gallery rendering
-├── image_loader.c     # Image loading
-├── stb_image.h        # stb_image (single-file library)
+├── Makefile           # Build system
+├── src/
+│   ├── main.c         # Application main
+│   ├── types.h        # Header / types
+│   ├── app.c          # Application state
+│   ├── file_scanner.c # File system scanning
+│   ├── gallery.c      # Gallery rendering and UI
+│   ├── image_loader.c # WIC Image loading
+│   ├── asset_worker.c # Background loading
+│   └── renderer.c     # D2D/DWrite rendering
 ├── Makefile           # Build system
 ├── .clang-format      # Code formatting rules
 ├── .clang-tidy        # Static analysis configuration

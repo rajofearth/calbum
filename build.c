@@ -11,6 +11,8 @@
 
 // ── 1. System Headers ───────────────────────────────────────────────────
 #include <windows.h>
+#include <initguid.h>
+#include <knownfolders.h>
 #include <stdint.h>
 
 // ── 2. Third-Party Libraries (implementations) ──────────────────────────

@@ -3,6 +3,8 @@
 // =========================================================================
 #include "types.h"
 #include <d3dcompiler.h>
+#include <d2d1.h>
+#include <dwrite.h>
 #include <stdio.h>
 
 // ── Shaders ─────────────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ int r_init(AppState *s)
     scd.Windowed = TRUE;
     scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
-    UINT flags = 0;
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #ifdef _DEBUG
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -139,6 +141,16 @@ int r_init(AppState *s)
     for(int i=0; i<MAX_GPU_TEXTURES; i++) s->tex_pool.last_used[i] = -1;
     s->tex_pool.frame_counter = 0;
 
+    // Init D2D1 and DirectWrite
+    D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &IID_ID2D1Factory, NULL, (void**)&s->d2d_factory);
+    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IID_IDWriteFactory, (IUnknown**)&s->dwrite_factory);
+
+    if (s->dwrite_factory) {
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
+            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format);
+    }
+
     r_resize(s);
     return 1;
 }
@@ -154,6 +166,30 @@ void r_resize(AppState *s)
     if (backBuffer) {
         s->d3d_device->lpVtbl->CreateRenderTargetView(s->d3d_device, (ID3D11Resource*)backBuffer, NULL, &s->rtv);
         backBuffer->lpVtbl->Release(backBuffer);
+    }
+
+    if (s->d2d_rtv) { ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv); s->d2d_rtv = NULL; }
+    if (s->d2d_brush) { ((IUnknown*)s->d2d_brush)->lpVtbl->Release((IUnknown*)s->d2d_brush); s->d2d_brush = NULL; }
+
+    IDXGISurface* dxgi_surface = NULL;
+    s->swap_chain->lpVtbl->GetBuffer(s->swap_chain, 0, &IID_IDXGISurface, (void**)&dxgi_surface);
+    if (dxgi_surface && s->d2d_factory) {
+        D2D1_RENDER_TARGET_PROPERTIES props = {0};
+        props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+        props.pixelFormat.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+        props.dpiX = 0.0f;
+        props.dpiY = 0.0f;
+        props.usage = D2D1_RENDER_TARGET_USAGE_NONE;
+        props.minLevel = D2D1_FEATURE_LEVEL_DEFAULT;
+        
+        s->d2d_factory->lpVtbl->CreateDxgiSurfaceRenderTarget(s->d2d_factory, dxgi_surface, &props, &s->d2d_rtv);
+        dxgi_surface->lpVtbl->Release(dxgi_surface);
+
+        if (s->d2d_rtv) {
+            D2D1_COLOR_F color = {1.0f, 1.0f, 1.0f, 1.0f};
+            s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &color, NULL, &s->d2d_brush);
+        }
     }
 
     D3D11_VIEWPORT vp = {0};
@@ -265,6 +301,18 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->DrawInstanced(s->d3d_context, 4, count, 0, 0);
 }
 
+void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h)
+{
+    if (!s->d2d_rtv || !s->dwrite_format || !s->d2d_brush) return;
+
+    D2D1_RECT_F layoutRect = { x, y, x + w, y + h };
+    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+    
+    ID2D1RenderTarget_DrawText(s->d2d_rtv, text, (UINT32)wcslen(text), s->dwrite_format, &layoutRect, (ID2D1Brush*)s->d2d_brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+
+    s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
+}
+
 void r_shutdown(AppState *s)
 {
     if (s->tex_pool.texture_array_srv) s->tex_pool.texture_array_srv->lpVtbl->Release(s->tex_pool.texture_array_srv);
@@ -279,5 +327,11 @@ void r_shutdown(AppState *s)
     if (s->rtv) s->rtv->lpVtbl->Release(s->rtv);
     if (s->swap_chain) s->swap_chain->lpVtbl->Release(s->swap_chain);
     if (s->d3d_context) s->d3d_context->lpVtbl->Release(s->d3d_context);
+    if (s->d2d_brush) ((IUnknown*)s->d2d_brush)->lpVtbl->Release((IUnknown*)s->d2d_brush);
+    if (s->dwrite_format) ((IUnknown*)s->dwrite_format)->lpVtbl->Release((IUnknown*)s->dwrite_format);
+    if (s->dwrite_factory) ((IUnknown*)s->dwrite_factory)->lpVtbl->Release((IUnknown*)s->dwrite_factory);
+    if (s->d2d_rtv) ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv);
+    if (s->d2d_factory) ((IUnknown*)s->d2d_factory)->lpVtbl->Release((IUnknown*)s->d2d_factory);
+
     if (s->d3d_device) s->d3d_device->lpVtbl->Release(s->d3d_device);
 }

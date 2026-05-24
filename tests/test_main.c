@@ -5,6 +5,10 @@
 // includes source files directly to access function definitions.
 // Compiled as a console executable (no WinMain).
 // =========================================================================
+#include <windows.h>
+#include <initguid.h>
+#include <knownfolders.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

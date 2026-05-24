@@ -27,6 +27,8 @@ void app_init(AppState *s)
 
     s->view_mode = VIEW_GALLERY;
     s->selected_index = -1;
+    s->sort_mode = SORT_DATE_CREATED;
+    s->sort_descending = 1; // Default to newest first
     s->needs_redraw = 1;
 }
 
@@ -103,6 +105,7 @@ void app_load_folder(AppState *s, const wchar_t *path)
 
     // ── 6. Scan the new folder ───────────────────────────────────────
     fs_scan_directory(path, s);
+    gal_apply_sort(s);
     if (s->count > 0) s->selected_index = 0;
 
     // ── 7. Restart background threads (clean state) ──────────────────
