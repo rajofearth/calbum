@@ -1,0 +1,64 @@
+# --- Build Output ---
+*.obj
+*.o
+*.lib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.manifest
+build/
+out/
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# --- IDE / Editor ---
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln.docstates
+*.vcxproj.user
+*.vcxproj.filters
+*.vcxproj
+
+# --- Compiler / Toolchain ---
+*.sbr
+*.bsc
+*.idb
+*.ipdb
+*.iobj
+*.res
+*.aps
+*.ncb
+*.dep
+*.tlog
+*.log
+*.lastbuildstate
+*.unsuccessfulbuild
+
+# --- Profiling ---
+*.trace
+*.pft
+*.sam
+*.vsp
+*.vspx
+*.pgc
+*.pgd
+*.pgm
+
+# --- OS / Temp ---
+Thumbs.db
+*.bak
+*.tmp
+*.swp
+~$*
+
+# --- Unity Build Caches ---
+*.unity.cache
