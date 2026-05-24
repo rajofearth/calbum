@@ -11,7 +11,15 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <dwmapi.h>
 #include <stdlib.h>
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE_V2
+#define DWMWA_USE_IMMERSIVE_DARK_MODE_V2 19
+#endif
 
 // Global state — single instance for the entire application
 static AppState g_state;
@@ -375,6 +383,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
         1200, 800, NULL, NULL, hInstance, NULL);
     if (!g_state.hwnd) return 1;
+
+    // Apply immersive dark mode to title bar
+    BOOL dark_mode = TRUE;
+    if (FAILED(DwmSetWindowAttribute(g_state.hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, sizeof(dark_mode)))) {
+        DwmSetWindowAttribute(g_state.hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_V2, &dark_mode, sizeof(dark_mode));
+    }
 
     ShowWindow(g_state.hwnd, nCmdShow);
     UpdateWindow(g_state.hwnd);

@@ -1,5 +1,5 @@
 CC      ?= gcc
-LDFLAGS ?= -lgdi32 -lshell32 -luser32 -lkernel32
+LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi
 CFLAGS_RELEASE = -O2 -mwindows -Wall -Wextra
 CFLAGS_DEBUG   = -O0 -mwindows -Wall -Wextra -Wpedantic -g
 
@@ -8,7 +8,7 @@ TARGET   = calbum.exe
 
 .PHONY: all release debug dev run clean test format lint size
 
-all: release
+all: test release
 
 release:
 	$(CC) $(BUILD) -o $(TARGET) $(CFLAGS_RELEASE) $(LDFLAGS)
@@ -27,7 +27,7 @@ test:
 	mkdir -p tests/build
 	$(CC) tests/test_main.c -o tests/build/test_runner \
 		-g -O0 -Wall -Wextra \
-		-lgdi32 -lshell32 -lshlwapi \
+		$(LDFLAGS) -lshlwapi \
 		-I.
 	./tests/build/test_runner
 

@@ -78,11 +78,13 @@ make test
 
 The test runner compiles a console executable that exercises pure functions:
 
-- Column layout calculation (`gal_get_columns`)
-- Hit-test targeting (`gal_hit_test`)
+- Grid layout calculation (`gal_calc_layout`)
+- Hit-test targeting (`gal_hit_test` with dynamic padding calculation)
 - Selection boundary logic
 - Scroll bounds clamping
 - Data structure invariants
+
+**Note:** Tests are automatically run as a strict gatekeeper when invoking `make all`.
 
 All tests are in [`tests/test_main.c`](tests/test_main.c).
 

@@ -1,5 +1,5 @@
 // =========================================================================
-// test_main.c — calbum unit test runner
+// test_main.c - calbum unit test runner
 //
 // Tests pure functions from the codebase. Uses a unity-build approach:
 // includes source files directly to access function definitions.
@@ -10,12 +10,15 @@
 #include <string.h>
 
 // Unity include the subsystems we test (in dependency order)
+#define STB_DXT_IMPLEMENTATION
+#include "lib/stb_dxt.h"
 #include "src/types.h"
 #include "src/renderer.c"
 #include "src/file_scanner.c"
 #define STB_IMAGE_IMPLEMENTATION
 #include "lib/stb_image.h"
 #include "src/image_loader.c"
+#include "src/asset_worker.c"
 #include "src/gallery.c"
 
 // ── Test framework ──────────────────────────────────────────────────────
@@ -42,28 +45,33 @@ static void setup(AppState *s, int count, int ww, int wh)
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
-static void test_gal_get_columns(void)
+static void test_gal_calc_layout(void)
 {
     AppState s;
+    GridLayout lay;
 
-    TEST("narrow window → 1 column");
+    TEST("narrow window -> 1 column");
     setup(&s, 10, 100, 600);
-    CHECK(gal_get_columns(&s) == 1, "narrow -> 1");
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols == 1, "narrow -> 1");
     PASS();
 
-    TEST("1200px window → 7 columns");
+    TEST("1200px window -> 7 columns");
     setup(&s, 50, 1200, 800);
-    CHECK(gal_get_columns(&s) == 7, "1200 -> 7");
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols == 7, "1200 -> 7");
     PASS();
 
-    TEST("1920px window → >= 11 columns");
+    TEST("1920px window -> >= 11 columns");
     setup(&s, 100, 1920, 1080);
-    CHECK(gal_get_columns(&s) >= 11, "1920 -> >= 11");
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols >= 11, "1920 -> >= 11");
     PASS();
 
-    TEST("zero-width → handled");
+    TEST("zero-width -> handled");
     setup(&s, 10, 0, 800);
-    CHECK(gal_get_columns(&s) >= 1, "0-width -> 1");
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols >= 1, "0-width -> 1");
     PASS();
 }
 
@@ -73,29 +81,32 @@ static void test_gal_hit_test(void)
     setup(&s, 4, 1200, 800);
     int idx = -1;
 
-    TEST("empty gallery → no hit");
+    TEST("empty gallery -> no hit");
     s.count = 0;
     CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "empty no hit");
     s.count = 4;
     PASS();
 
-    TEST("wrong view mode → no hit");
+    TEST("wrong view mode -> no hit");
     s.view_mode = VIEW_FULLIMAGE;
     CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "fullimage no hit");
     s.view_mode = VIEW_GALLERY;
     PASS();
 
+    GridLayout lay;
+    gal_calc_layout(&s, &lay);
+
     TEST("hit first thumbnail");
-    CHECK(gal_hit_test(&s, 16+80, 16+80, &idx) == 1, "hit first");
+    CHECK(gal_hit_test(&s, lay.left_margin + 50, GALLERY_PADDING + 50, &idx) == 1, "hit first");
     CHECK(idx == 0, "idx 0");
     PASS();
 
     TEST("hit second thumbnail");
-    CHECK(gal_hit_test(&s, 184+80, 16+80, &idx) == 1, "hit second");
+    CHECK(gal_hit_test(&s, lay.left_margin + lay.pad + 50, GALLERY_PADDING + 50, &idx) == 1, "hit second");
     CHECK(idx == 1, "idx 1");
     PASS();
 
-    TEST("click outside → no hit");
+    TEST("click outside -> no hit");
     CHECK(gal_hit_test(&s, -10, -10, &idx) == 0, "outside no hit");
     CHECK(gal_hit_test(&s, 10000, 10000, &idx) == 0, "far no hit");
     PASS();
@@ -107,7 +118,7 @@ static void test_selection_bounds(void)
     setup(&s, 5, 1200, 800);
     s.selected_index = 2;
 
-    TEST("middle → valid prev/next");
+    TEST("middle -> valid prev/next");
     CHECK(s.selected_index - 1 >= 0, "prev valid");
     CHECK(s.selected_index + 1 < s.count, "next valid");
     PASS();
@@ -139,18 +150,20 @@ static void test_image_entry(void)
 {
     ImageEntry e;
     memset(&e, 0, sizeof(e));
+    e.texture_slot = -1;
+    e.state = IMG_STATE_NEW;
 
     TEST("fresh entry invariants");
-    CHECK(e.loaded_thumb == 0, "thumb=0");
-    CHECK(e.loaded_full  == 0, "full=0");
-    CHECK(e.thumbnail == NULL, "thumb=NULL");
-    CHECK(e.full_image == NULL, "full=NULL");
+    CHECK(e.state == IMG_STATE_NEW, "state=NEW");
+    CHECK(e.texture_slot == -1, "tex=-1");
+    CHECK(e.thumb_requested == 0, "thumb_req=0");
     PASS();
 
-    TEST("flags writable");
-    e.loaded_thumb = 1; e.loaded_full = 1;
-    CHECK(e.loaded_thumb == 1, "thumb=1");
-    CHECK(e.loaded_full  == 1, "full=1");
+    TEST("state transitions");
+    e.state = IMG_STATE_LOADING;
+    e.thumb_requested = 1;
+    CHECK(e.state == IMG_STATE_LOADING, "state=LOADING");
+    CHECK(e.thumb_requested == 1, "req=1");
     PASS();
 }
 
@@ -178,10 +191,10 @@ static void test_extensions(void)
 int main(void)
 {
     printf("========================================\n");
-    printf("  calbum — Unit Tests\n");
+    printf("  calbum - Unit Tests\n");
     printf("========================================\n\n");
 
-    test_gal_get_columns();
+    test_gal_calc_layout();
     test_gal_hit_test();
     test_selection_bounds();
     test_scroll_clamp();
