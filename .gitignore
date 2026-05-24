@@ -62,3 +62,9 @@ Thumbs.db
 
 # --- Unity Build Caches ---
 *.unity.cache
+
+# --- Tests ---
+tests/build/
+
+# --- Windows reserved names ---
+nul

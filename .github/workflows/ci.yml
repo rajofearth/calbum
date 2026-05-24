@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Build (release)
+      run: gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -O2 -Wall -Wextra
+      shell: sh
+
+    - name: Build (debug)
+      run: gcc build.c -o calbum-debug.exe -mwindows -lgdi32 -lshell32 -O0 -g -Wall -Wextra -Wpedantic
+      shell: sh
+
+    - name: Build tests
+      run: |
+        mkdir -p tests/build
+        gcc tests/test_main.c -o tests/build/test_runner \
+          -g -O0 -Wall -Wextra \
+          -lgdi32 -lshell32 -lshlwapi \
+          -DSTB_IMAGE_IMPLEMENTATION \
+          -I.
+      shell: sh
+
+    - name: Run tests
+      run: ./tests/build/test_runner
+      shell: sh
+
+    - name: Check binary size
+      run: |
+        echo "Release binary size:"
+        ls -lh calbum.exe
+      shell: sh

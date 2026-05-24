@@ -1,82 +1,164 @@
 # calbum
 
-High-performance native Windows application — built for speed, minimalism, and direct OS interaction.
+> High-performance native Windows image gallery — built for speed, minimalism, and direct OS interaction.
 
-## Development Environment
+![CI](https://github.com/yashraj/calbum/workflows/CI/badge.svg)
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![Language](https://img.shields.io/badge/language-C17-555555)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-This project uses **[w64devkit](https://github.com/skeeto/w64devkit)** — a lightweight, portable C/C++ toolchain for Windows that requires zero installation. No Visual Studio needed.
+---
 
-### Installation
+## Overview
 
-w64devkit is already installed on this machine at:
+**calbum** is a lightweight, native Windows image gallery application that loads instantly and uses minimal memory. It scans your Pictures folder (or any dropped directory), displays images in a scrollable gallery grid, and lets you view them full-screen — all with zero framework overhead.
+
+### Features
+
+- **Auto-scan** — Opens your `%USERPROFILE%\Pictures` folder on startup
+- **Recursive directory scanning** — Finds images in subfolders
+- **Gallery view** — Lazy-loaded thumbnails in a responsive grid (scrollable, clickable)
+- **Full-image view** — Zoom-to-fit display with aspect ratio preservation
+- **Drag-and-drop** — Drop any folder to browse its images
+- **Keyboard navigation** — Arrow keys, Home/End, Space/Enter, Escape
+- **Double-buffered rendering** — No flicker during paint
+
+### Supported Image Formats
+
+JPEG, PNG, BMP, GIF, WebP, TGA, TIFF, PSD
+
+---
+
+## Build
+
+### Prerequisites
+
+[w64devkit](https://github.com/skeeto/w64devkit) — a lightweight, portable C/C++ toolchain for Windows (no Visual Studio needed). Already installed at:
 
 ```
 P:\Applications\w64devkit\w64devkit
 ```
 
-It has been added to your **User PATH**, so GCC should be available globally in any new terminal. If `gcc` isn't found, open a **fresh** terminal window (Start Menu → PowerShell/CMD).
-
-### Compiling
-
-From the project root, compile a Win32 GUI application:
+### Quick Start
 
 ```bash
-gcc main.c -o calbum.exe -mwindows -lgdi32
+make release   # optimized build
+make run       # build and launch
+make debug     # debug build with symbols
+make clean     # remove artifacts
 ```
 
-**Flag quick reference:**
-
-| Flag | Purpose |
-|---|---|
-| `-o <name>.exe` | Output executable name |
-| `-mwindows` | Build a Windows GUI app (no console window) |
-| `-lgdi32` | Link the GDI library for drawing |
-| `-ldwmapi` | Link DWM (Desktop Window Manager) APIs |
-| `-luser32` | Link user32 (windows, messages) |
-| `-lkernel32` | Link kernel32 (files, processes) |
-| `-O2` / `-O3` | Optimization flags for release builds |
-| `-Wall -Wextra` | Enable compiler warnings |
-| `-g` | Include debug symbols |
-
-### Faster Compilation (Unity Build)
-
-This project follows a **single translation unit** (unity build) approach. Instead of compiling many `.c` files separately, include them all into one master file:
+Or compile directly with GCC:
 
 ```bash
-gcc build.c -o calbum.exe -mwindows -lgdi32 -O2
+gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -O2
 ```
 
-This keeps compile times under 1 second and enables aggressive cross-module optimizations.
+### Build Targets
 
-### Running the Launcher (Alternative to PATH)
+| Target      | Description                                          |
+|-------------|------------------------------------------------------|
+| `release`   | Unity build, `-O2`, GUI binary                       |
+| `debug`     | Unity build, `-O0 -g -Wall -Wextra -Wpedantic`       |
+| `dev`       | Standard (non-unity) build, faster recompilation      |
+| `run`       | Build release and launch                             |
+| `clean`     | Delete build artifacts                               |
+| `test`      | Build and run unit tests                             |
+| `format`    | Run `clang-format` on all source                     |
+| `lint`      | Run `clang-tidy` static analysis                     |
+| `size`      | Show binary size and source stats                    |
 
-If you prefer not to rely on the PATH, launch the w64devkit environment directly:
+---
+
+## Testing
+
+```bash
+make test
+```
+
+The test runner compiles a console executable that exercises pure functions:
+
+- Column layout calculation (`gal_get_columns`)
+- Hit-test targeting (`gal_hit_test`)
+- Selection boundary logic
+- Scroll bounds clamping
+- Data structure invariants
+
+All tests are in [`tests/test_main.c`](tests/test_main.c).
+
+---
+
+## Architecture
+
+### Design Philosophy
+
+The project follows **data-oriented design** principles:
+
+- **Single translation unit (unity build)** — All `.c` files are `#include`d into `build.c`, enabling aggressive cross-module optimization and sub-second compile times
+- **Immediate-mode rendering** — UI is drawn fresh every frame; no retained widget tree
+- **Lazy loading** — Thumbnails and full images are loaded on demand, not at startup
+- **Minimal dependencies** — Only the Win32 API and [stb_image.h](https://github.com/nothings/stb) (single-file header library)
+
+### Module Map
+
+| Module               | Responsibility                                |
+|----------------------|----------------------------------------------|
+| `calbum.c`           | Entry point (`WinMain`), window procedure, event dispatch |
+| `calbum.h`           | Shared types (`AppState`, `ImageEntry`), function declarations |
+| `file_scanner.c`     | Recursive directory scan, image extension filtering |
+| `image_loader.c`     | Thumbnail/full-image loading via stb_image, HBITMAP conversion |
+| `gallery.c`          | Gallery grid layout, full-image viewer, hit testing, scrolling |
+| `build.c`            | Unity build master — includes `stb_image.h` implementation + all sources |
+
+### Directory Layout
 
 ```
-P:\Applications\w64devkit\w64devkit\w64devkit.exe
+calbum/
+├── build.c            # Unity build entry point
+├── calbum.c           # Application main
+├── calbum.h           # Header / types
+├── file_scanner.c     # File system scanning
+├── gallery.c          # Gallery rendering
+├── image_loader.c     # Image loading
+├── stb_image.h        # stb_image (single-file library)
+├── Makefile           # Build system
+├── .clang-format      # Code formatting rules
+├── .clang-tidy        # Static analysis configuration
+├── .github/
+│   └── workflows/
+│       └── ci.yml     # GitHub Actions CI
+├── tests/
+│   └── test_main.c    # Unit tests
+├── agents.md          # Context map for AI coding assistants
+├── README.md          # This file
+├── LICENSE            # MIT License
+└── .gitignore
 ```
 
-This opens a pre-configured terminal with GCC, Make, and all tools ready to use.
+---
 
-### Using from VS Code / Zed
+## Code Quality
 
-Open the integrated terminal in your editor and compile normally — as long as `gcc` is on your PATH, it works everywhere.
+This project maintains a high quality bar:
 
-## Knowledge Map
+- **Static analysis** via `clang-tidy` (configured in `.clang-tidy`)
+- **Code formatting** via `clang-format` (configured in `.clang-format`)
+- **No file exceeds 1,000 lines** — each module has a focused responsibility
+- **No dynamic dispatch** — direct function calls, no v-tables
+- **No C runtime dependencies in main loop** — only Win32 API calls
 
-See [`agents.md`](agents.md) for the full context map covering:
+### Style Guide
 
-1. **Win32 API** — application lifecycle, window procedures, message pump
-2. **Memory & Data Architecture** — custom allocators, data-oriented design
-3. **UI Architecture** — immediate mode GUI, layout, clipping
-4. **Graphics & Rendering** — GDI prototyping, DirectX, text rasterization
-5. **I/O & Multi-threading** — async I/O, IOCP, worker threads
-6. **Development Pipeline** — unity builds, minimal dependencies, profiling
+- C17 (C11 with GNU extensions via MinGW-w64)
+- Allman brace style
+- 4-space indentation (no tabs)
+- 120-character column limit
+- `snake_case` for functions and variables
+- Prefixes: `fs_` (file scanner), `il_` (image loader), `gal_` (gallery)
+- Hungarian notation avoided — types are explicit
 
-## Tooling
+---
 
-| Tool | Purpose |
-|---|---|
-| [w64devkit](https://github.com/skeeto/w64devkit) (GCC 16.1.0) | C/C++ compiler |
-| [stb libraries](https://github.com/nothings/stb) | Single-file image loading, font parsing |
-| Windows SDK (via MinGW-w64) | Win32 API headers |
+## License
+
+[MIT](LICENSE)

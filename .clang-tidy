@@ -1,0 +1,31 @@
+---
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -altera-struct-pack-align,
+  -altera-unroll-loops,
+  -bugprone-suspicious-include,
+  -modernize-macro-to-enum,
+  -bugprone-reserved-identifier,
+
+WarningsAsErrors: >
+  clang-diagnostic-implicit-int,
+  clang-diagnostic-incompatible-pointer-types,
+  clang-diagnostic-return-type,
+
+HeaderFilterRegex: '^.*\.h$'
+
+CheckOptions:
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: '2'
+  - key: modernize-use-nullptr.NullMacros
+    value: 'NULL'
+...
