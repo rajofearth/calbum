@@ -7,7 +7,10 @@
 // #included directly into build.c in dependency order, so visibility is
 // controlled by inclusion order, not by header files.
 // =========================================================================
+#define COBJMACROS
 #include <windows.h>
+#include <d3d11.h>
+#include <wincodec.h>
 #include <stdint.h>
 
 // -------------------------------------------------------------------------
@@ -148,29 +151,37 @@ static inline float ease_out_factor(float speed, float dt) {
 // Core Data Structures
 // -------------------------------------------------------------------------
 
+typedef enum {
+    IMG_STATE_NEW = 0,
+    IMG_STATE_LOADING = 1,
+    IMG_STATE_READY = 2,
+    IMG_STATE_RESIDENT_GPU = 3,
+    IMG_STATE_FAILED = 4
+} ImageState;
+
 // A single image entry — packed into a flat, cache-friendly array.
 typedef struct {
-    wchar_t path[MAX_PATH_LEN];
-    wchar_t filename[MAX_PATH_LEN];
-    HBITMAP thumbnail;
-    HBITMAP full_image;
+    wchar_t *path;
+    wchar_t *filename;
     int     full_width;
     int     full_height;
-    int     loaded_thumb;
-    int     loaded_full;
+    int16_t texture_slot;   // Index into GPU texture pool, -1 if none
+    ImageState state;
+    int     thumb_requested;
 } ImageEntry;
 
 // Work item for background thumbnail loading
 typedef struct {
-    int  image_index;
-    int  thumb_size;
-    HWND target_hwnd;
+    wchar_t path[MAX_PATH_LEN];
+    int     thumb_size;
+    HWND    target_hwnd;
 } LoadRequest;
 
 // Result posted back to main thread on thumbnail load completion
 typedef struct {
-    int      image_index;
-    HBITMAP  bitmap;
+    wchar_t  path[MAX_PATH_LEN];
+    void*    bc1_data;
+    int      bc1_size;
     int      succeeded;
 } LoadResult;
 
@@ -184,6 +195,16 @@ typedef struct {
 // ─────────────────────────────────────────────────────────────────────
 // Application State — single global struct, zero indirection
 // ─────────────────────────────────────────────────────────────────────
+
+#define MAX_GPU_TEXTURES 1024
+
+typedef struct {
+    ID3D11Texture2D*          texture_array;
+    ID3D11ShaderResourceView* texture_array_srv;
+    int                       last_used[MAX_GPU_TEXTURES];
+    int                       frame_counter;
+} GPUTexturePool;
+
 typedef struct AppState {
     // View mode
     ViewMode    view_mode;
@@ -198,6 +219,22 @@ typedef struct AppState {
     int         window_height;
     int         needs_redraw;
     HWND        hwnd;
+
+    // D3D11 Resources
+    ID3D11Device*           d3d_device;
+    ID3D11DeviceContext*    d3d_context;
+    IDXGISwapChain*         swap_chain;
+    ID3D11RenderTargetView* rtv;
+
+    ID3D11VertexShader*     vs;
+    ID3D11PixelShader*      ps;
+    ID3D11InputLayout*      input_layout;
+    ID3D11Buffer*           instance_buffer;
+    ID3D11SamplerState*     sampler;
+    ID3D11BlendState*       blend_state;
+    ID3D11Buffer*           constant_buffer;
+    
+    GPUTexturePool          tex_pool;
 
     // Flat array of images (arena-allocated)
     ImageEntry *images;
@@ -246,24 +283,22 @@ int   fs_scan_directory(const wchar_t *path, AppState *s);
 int   fs_has_image_extension(const wchar_t *name);
 
 // image_loader.c
-HBITMAP il_load_thumbnail(const wchar_t *path, int thumb_size);
-HBITMAP il_load_full(const wchar_t *path, int *out_w, int *out_h);
-void    il_free_bitmap(HBITMAP bmp);
-HBITMAP il_create_hbitmap(unsigned char *data, int width, int height, int channels);
+int   il_init_wic(void);
+void  il_shutdown_wic(void);
+void* il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size);
+void  il_free_bc1_data(void* data);
 
 // file_monitor.c
 int   fm_start_monitor(AppState *s, const wchar_t *directory);
 void  fm_stop_monitor(AppState *s);
-DWORD WINAPI fm_monitor_thread(LPVOID param);
 
 // asset_worker.c
 int   aw_start_workers(AppState *s);
 void  aw_stop_workers(AppState *s);
-int   aw_request_thumbnail(AppState *s, int image_index, int thumb_size, HWND hwnd);
+int   aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND hwnd);
 DWORD WINAPI aw_worker_thread(LPVOID param);
 
 // gallery.c
-int   gal_get_columns(AppState *s);
 void  gal_render_gallery(HDC hdc, AppState *s);
 void  gal_render_fullimage(HDC hdc, AppState *s);
 int   gal_hit_test(AppState *s, int x, int y, int *out_index);
@@ -274,11 +309,20 @@ void  gal_close_full(AppState *s);
 void  gal_tick_smooth_scroll(AppState *s);
 
 // renderer.c
-void r_clear(HDC hdc, int w, int h, COLORREF color);
-void r_fill_rect(HDC hdc, int x, int y, int w, int h, COLORREF color);
-void r_round_rect(HDC hdc, int x, int y, int w, int h, int r, COLORREF color);
-void r_draw_bitmap(HDC dst, HDC src_dc, HBITMAP bmp, int x, int y);
-void r_draw_text(HDC hdc, const wchar_t *text, int x, int y, int w, int h,
-                 COLORREF color, int font_size, int flags);
-void r_stretch_bitmap(HDC dst, int dx, int dy, int dw, int dh,
-                      HDC src_dc, HBITMAP bmp, int sw, int sh);
+typedef struct {
+    float x, y;
+    float size;
+    int   tex_index;
+    float opacity;
+    float padding[3];
+} InstanceData;
+
+int  r_init(AppState *s);
+void r_shutdown(AppState *s);
+void r_resize(AppState *s);
+void r_clear(AppState *s, float r, float g, float b);
+void r_present(AppState *s);
+int  r_alloc_texture_slot(AppState *s, int image_index);
+void r_upload_texture(AppState *s, int slot, void *bc1_data);
+void r_evict_texture(AppState *s, int slot);
+void r_draw_instances(AppState *s, void *instances, int count);

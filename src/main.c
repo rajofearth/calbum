@@ -11,6 +11,7 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <stdlib.h>
 
 // Global state — single instance for the entire application
 static AppState g_state;
@@ -21,11 +22,8 @@ static AppState g_state;
 
 static void image_cleanup_full(ImageEntry *e)
 {
-    if (e && e->full_image) {
-        DeleteObject(e->full_image);
-        e->full_image = NULL;
-        e->loaded_full = 0;
-    }
+    (void)e;
+    // Removed full image for Phase 1
 }
 
 static int image_select_offset(AppState *s, int delta)
@@ -54,24 +52,125 @@ static void tick_delta_time(AppState *s)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Custom message handlers (defined by asset_worker.c / file_monitor.c)
+// ─────────────────────────────────────────────────────────────────────────
+
+static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
+{
+    (void)wParam;
+    LoadResult *result = (LoadResult *)lParam;
+    if (result) {
+        if (result->succeeded && result->bc1_data) {
+            int found_idx = -1;
+            for (int i = 0; i < g_state.count; i++) {
+                if (_wcsicmp(g_state.images[i].path, result->path) == 0) {
+                    found_idx = i;
+                    break;
+                }
+            }
+            if (found_idx != -1) {
+                ImageEntry *e = &g_state.images[found_idx];
+                int slot = r_alloc_texture_slot(&g_state, found_idx);
+                if (slot != -1) {
+                    r_upload_texture(&g_state, slot, result->bc1_data);
+                    e->texture_slot = slot;
+                    e->state = IMG_STATE_RESIDENT_GPU;
+                }
+            }
+        }
+        il_free_bc1_data(result->bc1_data);
+        g_state.needs_redraw = 1;
+        free(result);
+        InvalidateRect(hwnd, NULL, TRUE);
+    }
+}
+
+static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
+{
+    (void)wParam;
+    FileChange *fc = (FileChange *)lParam;
+    if (!fc) return;
+    AppState *s = &g_state;
+
+    if (!fs_has_image_extension(fc->path)) { free(fc); return; }
+
+    switch (fc->type) {
+    case CHANGE_ADDED: {
+        // Append and let the next paint lazy-load the thumbnail
+        if (s->count < s->capacity) {
+            size_t full_sz = (wcslen(fc->path) + 1) * sizeof(wchar_t);
+            size_t name_sz = (wcslen(fc->filename) + 1) * sizeof(wchar_t);
+            wchar_t *p_full = (wchar_t *)arena_alloc(&s->arena, full_sz);
+            wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
+            if (p_full && p_name) {
+                wcscpy(p_full, fc->path);
+                wcscpy(p_name, fc->filename);
+                ImageEntry *e = &s->images[s->count];
+                e->path = p_full;
+                e->filename = p_name;
+                e->texture_slot = -1;
+                e->state = IMG_STATE_NEW;
+                e->thumb_requested = 0;
+                e->full_width = 0;
+                e->full_height = 0;
+                s->count++;
+                g_state.needs_redraw = 1;
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+        }
+        break;
+    }
+    case CHANGE_REMOVED: {
+        // Linear scan to find and remove
+        for (int i = 0; i < s->count; i++) {
+            if (_wcsicmp(s->images[i].path, fc->path) == 0) {
+                if (s->images[i].texture_slot != -1) {
+                    r_evict_texture(s, s->images[i].texture_slot);
+                }
+                int remaining = s->count - i - 1;
+                if (remaining > 0)
+                    memmove(&s->images[i], &s->images[i+1], remaining * sizeof(ImageEntry));
+                s->count--;
+                g_state.needs_redraw = 1;
+                InvalidateRect(hwnd, NULL, TRUE);
+                break;
+            }
+        }
+        break;
+    }
+    case CHANGE_MODIFIED: {
+        // Mark thumbnail as stale so it gets reloaded
+        for (int i = 0; i < s->count; i++) {
+            if (_wcsicmp(s->images[i].path, fc->path) == 0) {
+                if (s->images[i].texture_slot != -1) {
+                    r_evict_texture(s, s->images[i].texture_slot);
+                }
+                s->images[i].state = IMG_STATE_NEW;
+                s->images[i].thumb_requested = 0;
+                g_state.needs_redraw = 1;
+                InvalidateRect(hwnd, NULL, TRUE);
+                break;
+            }
+        }
+        break;
+    }
+    }
+    free(fc);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Window procedure
 // ─────────────────────────────────────────────────────────────────────────
 
 static void on_paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
-    HDC hdc = BeginPaint(hwnd, &ps);
-    RECT client;
-    GetClientRect(hwnd, &client);
-    g_state.window_width  = client.right - client.left;
-    g_state.window_height = client.bottom - client.top;
-
+    BeginPaint(hwnd, &ps);
     if (g_state.window_width > 0 && g_state.window_height > 0) {
-        gal_tick_smooth_scroll(&g_state);
         if (g_state.view_mode == VIEW_GALLERY)
-            gal_render_gallery(hdc, &g_state);
+            gal_render_gallery(NULL, &g_state);
         else
-            gal_render_fullimage(hdc, &g_state);
+            gal_render_fullimage(NULL, &g_state);
     }
     EndPaint(hwnd, &ps);
 }
@@ -82,6 +181,7 @@ static void on_size(HWND hwnd)
     GetClientRect(hwnd, &client);
     g_state.window_width  = client.right - client.left;
     g_state.window_height = client.bottom - client.top;
+    r_resize(&g_state);
     gal_update_layout(&g_state);
     InvalidateRect(hwnd, NULL, TRUE);
 }
@@ -181,6 +281,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     case WM_LBUTTONDBLCLK:   on_lbutton_dblclk(hwnd, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_MOUSEWHEEL:      on_mousewheel(hwnd, GET_WHEEL_DELTA_WPARAM(wParam)); return 0;
     case WM_DROPFILES:       on_drop_files(hwnd, (HDROP)wParam); return 0;
+    case WM_CALBUM_LOAD_COMPLETE: on_thumb_complete(hwnd, wParam, lParam); return 0;
+    case WM_CALBUM_FILE_CHANGE:   on_file_changed(hwnd, wParam, lParam); return 0;
 
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mmi = (MINMAXINFO *)lParam;
@@ -227,6 +329,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     ShowWindow(g_state.hwnd, nCmdShow);
     UpdateWindow(g_state.hwnd);
 
+    // Init WIC and D3D11
+    il_init_wic();
+    r_init(&g_state);
+
     // Start worker threads
     aw_start_workers(&g_state);
 
@@ -238,24 +344,39 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     // Message loop with delta time
     MSG msg = {0};
+    int was_idle = 0;
+    
     for (;;) {
-        BOOL has = PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE);
-        if (has) {
-            if (msg.message == WM_QUIT) break;
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) goto exit_loop;
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
 
-        tick_delta_time(&g_state);
+        // Waking up from idle: reset the tick to avoid a massive frame delta jump
+        if (was_idle) {
+            LARGE_INTEGER now;
+            QueryPerformanceCounter(&now);
+            g_state.last_tick = now.QuadPart;
+            was_idle = 0;
+        }
 
-        // If needed, yield CPU briefly to avoid 100% usage on idle
-        if (!has && !g_state.needs_redraw) {
-            WaitMessage();
-        } else if (g_state.needs_redraw) {
+        tick_delta_time(&g_state);
+        gal_tick_smooth_scroll(&g_state);
+
+        if (g_state.needs_redraw) {
             InvalidateRect(g_state.hwnd, NULL, TRUE);
+            UpdateWindow(g_state.hwnd); // Synchronous paint ensures drawing matches physics
+        } else {
+            // No messages and no drawing needed -> Yield CPU
+            WaitMessage();
+            was_idle = 1;
         }
     }
+exit_loop:
 
+    r_shutdown(&g_state);
+    il_shutdown_wic();
     app_shutdown(&g_state);
     return (int)msg.wParam;
 }

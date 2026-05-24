@@ -27,19 +27,36 @@ static int append_entry(AppState *s, const wchar_t *full, const wchar_t *name)
     if (s->count >= s->capacity) {
         int new_cap = s->capacity ? s->capacity * 2 : 256;
         size_t sz   = new_cap * sizeof(ImageEntry);
-        size_t align = 4096, mask = align - 1;
+        size_t align = 16, mask = align - 1;
         size_t off = (s->arena.offset + mask) & ~mask;
-        if (off + sz > ARENA_CAPACITY) return 0;
+        if (off + sz > s->arena.capacity) return 0;
 
+        ImageEntry *old_images = s->images;
         s->images = (ImageEntry *)(s->arena.buf + off);
         s->arena.offset = off + sz;
+        // Copy surviving entries into the new block so nothing is lost
+        if (old_images && s->count > 0)
+            memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
         s->capacity = new_cap;
     }
+
+    size_t full_sz = (wcslen(full) + 1) * sizeof(wchar_t);
+    size_t name_sz = (wcslen(name) + 1) * sizeof(wchar_t);
+    wchar_t *p_full = (wchar_t *)arena_alloc(&s->arena, full_sz);
+    wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
+    if (!p_full || !p_name) return 0;
+
+    wcscpy(p_full, full);
+    wcscpy(p_name, name);
+
     ImageEntry *e = &s->images[s->count];
-    wcsncpy(e->path, full, MAX_PATH_LEN-1)[MAX_PATH_LEN-1] = L'\0';
-    wcsncpy(e->filename, name, MAX_PATH_LEN-1)[MAX_PATH_LEN-1] = L'\0';
-    e->thumbnail = e->full_image = NULL;
-    e->loaded_thumb = e->loaded_full = 0;
+    e->path = p_full;
+    e->filename = p_name;
+    e->texture_slot = -1;
+    e->state = IMG_STATE_NEW;
+    e->thumb_requested = 0;
+    e->full_width = 0;
+    e->full_height = 0;
     s->count++;
     return 1;
 }

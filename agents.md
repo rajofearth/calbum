@@ -57,3 +57,11 @@ How you build, test, and measure the application.
 - **Single Translation Unit (Unity Builds)**: Including all your `.c` files into one master `.c` file before compiling. This drastically speeds up compile times (often under 1 second) and allows the compiler to heavily optimize the code.
 - **Minimal Dependencies**: Relying strictly on OS headers and single-file, header-only libraries (like the `stb` libraries for image loading or font parsing) to prevent bloat.
 - **Profiling**: Using tools to measure exactly how many milliseconds a function takes. Performance isn't guessed; it is measured.
+
+## 7. The Engineering Philosophy
+
+To maintain a high-performance codebase, coding must be intentional, rigorous, and forward-looking.
+
+- **Simplicity Above Complexity**: Always prefer the direct, boring, and minimal approach. If there is a "code judo" move that eliminates entire classes of complexity by restructuring, take it. Do not normalize architectural drift or allow code spaghetti to accumulate.
+- **Holistic Problem Solving**: Do not just apply localized "band-aid" patches to fix symptoms. Think intellectually about the root cause in the context of the entire codebase and implement the *proper* solution that betters the overall architecture.
+- **Deep Code Quality**: Measure twice, cut once. Keep functions focused, strictly enforce type safety (avoiding "magic numbers" and unstructured data), and refuse to let files grow into unmanageable 1000+ line monoliths. The codebase should read cleanly and deliberately.

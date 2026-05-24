@@ -1,93 +1,126 @@
 // =========================================================================
-// image_loader.c — Image file decoding via stb_image
-//
-// Thread-safe: each call allocates + frees its own stb data.
-// stb_image.h must be #included (with STB_IMAGE_IMPLEMENTATION)
-// BEFORE this file in build.c.
+// image_loader.c — WIC + BC1 compression
 // =========================================================================
 #include "types.h"
+#include <stdio.h>
 #include <stdlib.h>
 
-HBITMAP il_create_hbitmap(unsigned char *data, int width, int height, int channels)
+static IWICImagingFactory *g_wic_factory = NULL;
+
+int il_init_wic(void)
 {
-    int stride = width * 4;
-    unsigned char *bgra = (unsigned char *)malloc(stride * height);
-    if (!bgra) return NULL;
-
-    if (channels >= 3) {
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                int s = (y * width + x) * channels;
-                int d = y * stride + x * 4;
-                bgra[d+0] = data[s+2]; bgra[d+1] = data[s+1];
-                bgra[d+2] = data[s+0]; bgra[d+3] = (channels >= 4) ? data[s+3] : 255;
-            }
-    } else if (channels == 1) {
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                unsigned char v = data[y * width + x];
-                int d = y * stride + x * 4;
-                bgra[d+0]=bgra[d+1]=bgra[d+2]=v; bgra[d+3]=255;
-            }
-    } else { free(bgra); return NULL; }
-
-    BITMAPINFO bi = {0};
-    bi.bmiHeader.biSize   = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth  = width;
-    bi.bmiHeader.biHeight = -height; // top-down
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-
-    void *bits = NULL;
-    HBITMAP hbmp = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
-    if (hbmp && bits) memcpy(bits, bgra, stride * height);
-    free(bgra);
-    return hbmp;
+    HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+                                  &IID_IWICImagingFactory, (void**)&g_wic_factory);
+    return SUCCEEDED(hr) ? 1 : 0;
 }
 
-HBITMAP il_load_thumbnail(const wchar_t *path, int thumb_size)
+void il_shutdown_wic(void)
 {
-    char utf8[MAX_PATH_LEN * 2];
-    WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8, sizeof(utf8), NULL, NULL);
+    if (g_wic_factory) {
+        g_wic_factory->lpVtbl->Release(g_wic_factory);
+        g_wic_factory = NULL;
+    }
+}
 
-    int w, h, ch;
-    unsigned char *data = stbi_load(utf8, &w, &h, &ch, 4);
-    if (!data) return NULL;
+extern void stb_compress_dxt_block(unsigned char *dest, const unsigned char *src, int alpha, int mode);
 
-    int tw = thumb_size, th = thumb_size;
+void* il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
+{
+    if (!g_wic_factory) return NULL;
+
+    IWICBitmapDecoder *decoder = NULL;
+    HRESULT hr = g_wic_factory->lpVtbl->CreateDecoderFromFilename(
+        g_wic_factory, path, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+    if (FAILED(hr)) return NULL;
+
+    IWICBitmapFrameDecode *frame = NULL;
+    hr = decoder->lpVtbl->GetFrame(decoder, 0, &frame);
+    decoder->lpVtbl->Release(decoder);
+    if (FAILED(hr)) return NULL;
+
+    UINT w = 0, h = 0;
+    frame->lpVtbl->GetSize(frame, &w, &h);
+
+    UINT tw = thumb_size, th = thumb_size;
     if (w > h) th = (h * thumb_size) / w;
     else       tw = (w * thumb_size) / h;
+    if (tw == 0) tw = 1;
+    if (th == 0) th = 1;
 
-    unsigned char *thumb = (unsigned char *)malloc(tw * th * 4);
-    if (!thumb) { stbi_image_free(data); return NULL; }
+    IWICBitmapScaler *scaler = NULL;
+    hr = g_wic_factory->lpVtbl->CreateBitmapScaler(g_wic_factory, &scaler);
+    if (SUCCEEDED(hr)) {
+        hr = scaler->lpVtbl->Initialize(scaler, (IWICBitmapSource*)frame, tw, th, WICBitmapInterpolationModeFant);
+        if (FAILED(hr)) { scaler->lpVtbl->Release(scaler); scaler = NULL; }
+    }
+    frame->lpVtbl->Release(frame);
+    if (!scaler) return NULL;
 
-    float sx = (float)w / tw, sy = (float)h / th;
-    for (int ty = 0; ty < th; ty++)
-        for (int tx = 0; tx < tw; tx++) {
-            int si = ((int)(ty * sy) * w + (int)(tx * sx)) * 4;
-            int di = (ty * tw + tx) * 4;
-            thumb[di+0]=data[si+0]; thumb[di+1]=data[si+1];
-            thumb[di+2]=data[si+2]; thumb[di+3]=data[si+3];
+    IWICFormatConverter *converter = NULL;
+    hr = g_wic_factory->lpVtbl->CreateFormatConverter(g_wic_factory, &converter);
+    if (SUCCEEDED(hr)) {
+        hr = converter->lpVtbl->Initialize(converter, (IWICBitmapSource*)scaler,
+            &GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, NULL, 0.f, WICBitmapPaletteTypeCustom);
+        if (FAILED(hr)) { converter->lpVtbl->Release(converter); converter = NULL; }
+    }
+    scaler->lpVtbl->Release(scaler);
+    if (!converter) return NULL;
+
+    UINT stride = thumb_size * 4;
+    UINT total_size = stride * thumb_size;
+    unsigned char *rgba = (unsigned char *)calloc(1, total_size);
+    if (rgba) {
+        UINT dx = (thumb_size - tw) / 2;
+        UINT dy = (thumb_size - th) / 2;
+        WICRect rect = {0, 0, (INT)tw, (INT)th};
+        
+        unsigned char *tight = (unsigned char*)malloc(tw * 4 * th);
+        if (tight) {
+            hr = converter->lpVtbl->CopyPixels(converter, &rect, tw * 4, tw * 4 * th, tight);
+            if (SUCCEEDED(hr)) {
+                for (UINT y = 0; y < th; y++) {
+                    memcpy(rgba + (dy + y) * stride + dx * 4, tight + y * tw * 4, tw * 4);
+                }
+            }
+            free(tight);
         }
-    stbi_image_free(data);
+    }
+    converter->lpVtbl->Release(converter);
 
-    HBITMAP hbmp = il_create_hbitmap(thumb, tw, th, 4);
-    free(thumb);
-    return hbmp;
+    if (!rgba || FAILED(hr)) {
+        if (rgba) free(rgba);
+        return NULL;
+    }
+
+    int blocks_x = thumb_size / 4;
+    int blocks_y = thumb_size / 4;
+    int bc1_size = blocks_x * blocks_y * 8;
+    unsigned char *bc1 = (unsigned char *)malloc(bc1_size);
+    
+    if (bc1) {
+        unsigned char block[64];
+        unsigned char *dst = bc1;
+        for (int by = 0; by < blocks_y; by++) {
+            for (int bx = 0; bx < blocks_x; bx++) {
+                for (int y = 0; y < 4; y++) {
+                    for (int x = 0; x < 4; x++) {
+                        int sx = bx * 4 + x;
+                        int sy = by * 4 + y;
+                        memcpy(&block[(y * 4 + x) * 4], &rgba[sy * stride + sx * 4], 4);
+                    }
+                }
+                stb_compress_dxt_block(dst, block, 0, 0);
+                dst += 8;
+            }
+        }
+    }
+    free(rgba);
+
+    if (out_size) *out_size = bc1_size;
+    return bc1;
 }
 
-HBITMAP il_load_full(const wchar_t *path, int *out_w, int *out_h)
+void il_free_bc1_data(void* data)
 {
-    char utf8[MAX_PATH_LEN * 2];
-    WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8, sizeof(utf8), NULL, NULL);
-    int w, h, ch;
-    unsigned char *data = stbi_load(utf8, &w, &h, &ch, 4);
-    if (!data) return NULL;
-    *out_w = w; *out_h = h;
-    HBITMAP hbmp = il_create_hbitmap(data, w, h, 4);
-    stbi_image_free(data);
-    return hbmp;
+    if (data) free(data);
 }
-
-void il_free_bitmap(HBITMAP bmp) { if (bmp) DeleteObject(bmp); }
