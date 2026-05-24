@@ -26,18 +26,14 @@ static AppState g_state;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────
 
-static void image_cleanup_full(ImageEntry *e)
-{
-    (void)e;
-    // Removed full image for Phase 1
-}
-
 static int image_select_offset(AppState *s, int delta)
 {
     int new_idx = s->selected_index + delta;
     if (new_idx < 0 || new_idx >= s->count) return 0;
-    if (s->view_mode == VIEW_FULLIMAGE)
-        image_cleanup_full(&s->images[s->selected_index]);
+    if (s->view_mode == VIEW_FULLIMAGE) {
+        r_free_full_image(s);
+        s->full_load_timer = 0.15; // 150ms debounce
+    }
     s->selected_index = new_idx;
     s->needs_redraw = 1;
     return 1;
@@ -246,7 +242,9 @@ static void on_keydown(HWND hwnd, int vk)
 static void on_lbutton_down(HWND hwnd, int x, int y)
 {
     if (g_state.view_mode == VIEW_FULLIMAGE) {
-        if (image_select_offset(&g_state,1)) InvalidateRect(hwnd,NULL,TRUE);
+        if (gal_handle_fullimage_click(&g_state, x, y)) {
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
         return;
     }
 
@@ -383,6 +381,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     // Register window class
     const wchar_t CLASS_NAME[] = L"calbumWindow";
     WNDCLASSW wc = {0};
+    wc.style         = CS_DBLCLKS;
     wc.lpfnWndProc   = window_proc;
     wc.hInstance     = hInstance;
     wc.lpszClassName = CLASS_NAME;
@@ -440,9 +439,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         }
 
         tick_delta_time(&g_state);
+
+        if (g_state.view_mode == VIEW_FULLIMAGE && g_state.full_load_timer > 0.0) {
+            g_state.full_load_timer -= g_state.delta_time;
+            if (g_state.full_load_timer <= 0.0) {
+                g_state.full_load_timer = 0.0;
+                g_state.needs_redraw = 1;
+            }
+        }
+
         gal_tick_smooth_scroll(&g_state);
 
-        if (g_state.needs_redraw) {
+        if (g_state.needs_redraw || (g_state.view_mode == VIEW_FULLIMAGE && g_state.full_load_timer > 0.0)) {
             InvalidateRect(g_state.hwnd, NULL, TRUE);
             UpdateWindow(g_state.hwnd); // Synchronous paint ensures drawing matches physics
         } else {

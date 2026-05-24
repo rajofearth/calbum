@@ -36,6 +36,7 @@ void app_shutdown(AppState *s)
 {
     fm_stop_monitor(s);
     aw_stop_workers(s);
+    r_free_full_image(s);
 
     if (s->images)
         for (int i = 0; i < s->count; i++) {
@@ -84,6 +85,7 @@ void app_load_folder(AppState *s, const wchar_t *path)
     }
 
     // ── 3. Free old image resources ──────────────────────────────────
+    r_free_full_image(s);
     if (s->images)
         for (int i = 0; i < s->count; i++) {
             if (s->images[i].texture_slot != -1) {

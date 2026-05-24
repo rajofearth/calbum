@@ -40,11 +40,16 @@ static const char* shader_src =
     "    return output;\n"
     "}\n"
     "Texture2DArray textures : register(t0);\n"
+    "Texture2D full_texture : register(t1);\n"
     "SamplerState samp : register(s0);\n"
     "float4 ps_main(PS_INPUT input) : SV_TARGET {\n"
     "    if (input.tex_idx == -2) return float4(1.0, 1.0, 1.0, input.opacity);\n"
     "    if (input.tex_idx == -3) return float4(0.2, 0.2, 0.2, input.opacity);\n"
     "    if (input.tex_idx == -4) return float4(0.5, 0.5, 0.5, input.opacity);\n"
+    "    if (input.tex_idx == -5) {\n"
+    "        float4 color = full_texture.Sample(samp, input.uv);\n"
+    "        return float4(color.rgb, input.opacity);\n"
+    "    }\n"
     "    if (input.tex_idx < 0) return float4(0.12, 0.12, 0.12, input.opacity);\n"
     "    float4 color = textures.Sample(samp, float3(input.uv, input.tex_idx));\n"
     "    return float4(color.rgb, input.opacity);\n"
@@ -296,7 +301,8 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->PSSetShader(s->d3d_context, s->ps, NULL, 0);
     s->d3d_context->lpVtbl->PSSetSamplers(s->d3d_context, 0, 1, &s->sampler);
 
-    s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 1, &s->tex_pool.texture_array_srv);
+    ID3D11ShaderResourceView* srvs[2] = { s->tex_pool.texture_array_srv, s->full_srv };
+    s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 2, srvs);
 
     s->d3d_context->lpVtbl->DrawInstanced(s->d3d_context, 4, count, 0, 0);
 }
@@ -315,6 +321,8 @@ void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, fl
 
 void r_shutdown(AppState *s)
 {
+    if (s->full_srv) { s->full_srv->lpVtbl->Release(s->full_srv); s->full_srv = NULL; }
+    if (s->full_texture) { s->full_texture->lpVtbl->Release(s->full_texture); s->full_texture = NULL; }
     if (s->tex_pool.texture_array_srv) s->tex_pool.texture_array_srv->lpVtbl->Release(s->tex_pool.texture_array_srv);
     if (s->tex_pool.texture_array) s->tex_pool.texture_array->lpVtbl->Release(s->tex_pool.texture_array);
     if (s->sampler) s->sampler->lpVtbl->Release(s->sampler);
@@ -334,4 +342,63 @@ void r_shutdown(AppState *s)
     if (s->d2d_factory) ((IUnknown*)s->d2d_factory)->lpVtbl->Release((IUnknown*)s->d2d_factory);
 
     if (s->d3d_device) s->d3d_device->lpVtbl->Release(s->d3d_device);
+}
+
+void r_free_full_image(AppState *s)
+{
+    if (s->full_srv) { s->full_srv->lpVtbl->Release(s->full_srv); s->full_srv = NULL; }
+    if (s->full_texture) { s->full_texture->lpVtbl->Release(s->full_texture); s->full_texture = NULL; }
+    s->full_loaded_path[0] = L'\0';
+    s->full_texture_w = 0;
+    s->full_texture_h = 0;
+
+    if (s->d3d_context) {
+        s->d3d_context->lpVtbl->Flush(s->d3d_context);
+    }
+}
+
+int r_load_full_image(AppState *s, const wchar_t *path)
+{
+    if (s->full_texture && _wcsicmp(s->full_loaded_path, path) == 0) {
+        return 1;
+    }
+
+    r_free_full_image(s);
+
+    int w = 0, h = 0;
+    void *rgba = il_load_full_image(path, &w, &h);
+    if (!rgba) return 0;
+
+    D3D11_TEXTURE2D_DESC desc = {0};
+    desc.Width = (UINT)w;
+    desc.Height = (UINT)h;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA init_data = {0};
+    init_data.pSysMem = rgba;
+    init_data.SysMemPitch = (UINT)(w * 4);
+
+    HRESULT hr = s->d3d_device->lpVtbl->CreateTexture2D(s->d3d_device, &desc, &init_data, &s->full_texture);
+
+    if (FAILED(hr)) {
+        return 0;
+    }
+
+    hr = s->d3d_device->lpVtbl->CreateShaderResourceView(s->d3d_device, (ID3D11Resource*)s->full_texture, NULL, &s->full_srv);
+    if (FAILED(hr)) {
+        s->full_texture->lpVtbl->Release(s->full_texture);
+        s->full_texture = NULL;
+        return 0;
+    }
+
+    wcsncpy(s->full_loaded_path, path, MAX_PATH_LEN - 1);
+    s->full_loaded_path[MAX_PATH_LEN - 1] = L'\0';
+    s->full_texture_w = w;
+    s->full_texture_h = h;
+    return 1;
 }

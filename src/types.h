@@ -270,6 +270,7 @@ typedef struct AppState {
     float       drag_start_y;
     float       drag_start_scroll_y;
     int         sort_menu_open;
+    int         info_open;
 
     // File monitor thread
     HANDLE      monitor_thread;
@@ -288,6 +289,14 @@ typedef struct AppState {
 
     // Current directory
     wchar_t     current_dir[MAX_PATH_LEN];
+
+    // Full Image Texture
+    ID3D11Texture2D*          full_texture;
+    ID3D11ShaderResourceView* full_srv;
+    wchar_t                   full_loaded_path[MAX_PATH_LEN];
+    int                       full_texture_w;
+    int                       full_texture_h;
+    double                    full_load_timer;
 } AppState;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -311,6 +320,8 @@ int   il_init_wic(void);
 void  il_shutdown_wic(void);
 void* il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size);
 void  il_free_bc1_data(void* data);
+int   il_get_image_dimensions(const wchar_t *path, int *out_w, int *out_h);
+void* il_load_full_image(const wchar_t *path, int *out_w, int *out_h);
 
 // file_monitor.c
 int   fm_start_monitor(AppState *s, const wchar_t *directory);
@@ -327,6 +338,7 @@ void  gal_render_gallery(HDC hdc, AppState *s);
 void  gal_render_fullimage(HDC hdc, AppState *s);
 int   gal_hit_test(AppState *s, int x, int y, int *out_index);
 int   gal_handle_ui_click(AppState *s, int x, int y);
+int   gal_handle_fullimage_click(AppState *s, int x, int y);
 void  gal_apply_sort(AppState *s);
 void  gal_scroll(AppState *s, float delta);
 void  gal_update_layout(AppState *s);
@@ -354,3 +366,5 @@ void r_upload_texture(AppState *s, int slot, void *bc1_data);
 void r_evict_texture(AppState *s, int slot);
 void r_draw_instances(AppState *s, void *instances, int count);
 void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h);
+int  r_load_full_image(AppState *s, const wchar_t *path);
+void r_free_full_image(AppState *s);

@@ -191,6 +191,38 @@ static void test_extensions(void)
     PASS();
 }
 
+static void test_fullimage_interactions(void)
+{
+    AppState s;
+    setup(&s, 5, 1200, 800);
+    s.view_mode = VIEW_FULLIMAGE;
+    s.selected_index = 2;
+    s.info_open = 0;
+
+    TEST("fullimage hit back button -> gallery mode");
+    CHECK(gal_handle_fullimage_click(&s, 50, 35) == 1, "click back handled");
+    CHECK(s.view_mode == VIEW_GALLERY, "back -> VIEW_GALLERY");
+    s.view_mode = VIEW_FULLIMAGE;
+    PASS();
+
+    TEST("fullimage hit info button -> toggles info_open");
+    CHECK(gal_handle_fullimage_click(&s, 1200 - 70, 35) == 1, "click info handled");
+    CHECK(s.info_open == 1, "info toggled to 1");
+    CHECK(gal_handle_fullimage_click(&s, 1200 - 70, 35) == 1, "click info handled");
+    CHECK(s.info_open == 0, "info toggled to 0");
+    PASS();
+
+    TEST("fullimage hit prev arrow -> moves selected_index");
+    CHECK(gal_handle_fullimage_click(&s, 35, 800 - 130 + 50) == 1, "click prev handled");
+    CHECK(s.selected_index == 1, "selected_index 2 -> 1");
+    PASS();
+
+    TEST("fullimage hit next arrow -> moves selected_index");
+    CHECK(gal_handle_fullimage_click(&s, 1200 - 35, 800 - 130 + 50) == 1, "click next handled");
+    CHECK(s.selected_index == 2, "selected_index 1 -> 2");
+    PASS();
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 int main(void)
 {
@@ -205,6 +237,7 @@ int main(void)
     test_image_entry();
     test_viewmode();
     test_extensions();
+    test_fullimage_interactions();
 
     printf("\n========================================\n");
     printf("  Results: %d/%d passed, %d failed\n", g_pass, g_run, g_fail);

@@ -208,7 +208,10 @@ int gal_hit_test(AppState *s, int x, int y, int *out_index)
 void gal_open_full(AppState *s, int index)
 {
     if (index < 0 || index >= s->count) return;
+    r_free_full_image(s);
     s->selected_index = index;
+    s->view_mode = VIEW_FULLIMAGE;
+    s->full_load_timer = 0.0;
     s->needs_redraw = 1;
 }
 
@@ -358,8 +361,429 @@ void gal_render_gallery(HDC hdc, AppState *s)
     s->needs_redraw = 0;
 }
 
+static void format_size(uint64_t bytes, wchar_t *buf, int len)
+{
+    if (bytes >= 1024ULL * 1024 * 1024) {
+        swprintf(buf, len, L"%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+    } else if (bytes >= 1024ULL * 1024) {
+        swprintf(buf, len, L"%.2f MB", (double)bytes / (1024.0 * 1024.0));
+    } else if (bytes >= 1024) {
+        swprintf(buf, len, L"%.2f KB", (double)bytes / 1024.0);
+    } else {
+        swprintf(buf, len, L"%llu Bytes", bytes);
+    }
+}
+
+static void format_filetime(uint64_t filetime, wchar_t *buf, int len)
+{
+    FILETIME ft;
+    ft.dwHighDateTime = (DWORD)(filetime >> 32);
+    ft.dwLowDateTime = (DWORD)(filetime & 0xFFFFFFFF);
+    
+    SYSTEMTIME stUTC, stLocal;
+    if (FileTimeToSystemTime(&ft, &stUTC)) {
+        if (SystemTimeToTzSpecificLocalTime(NULL, &stUTC, &stLocal)) {
+            swprintf(buf, len, L"%04d-%02d-%02d %02d:%02d:%02d",
+                     stLocal.wYear, stLocal.wMonth, stLocal.wDay,
+                     stLocal.wHour, stLocal.wMinute, stLocal.wSecond);
+            return;
+        }
+    }
+    wcscpy(buf, L"Unknown");
+}
+
 void gal_render_fullimage(HDC hdc, AppState *s)
 {
-    // Out of scope for D3D11 Phase 1
-    gal_render_gallery(hdc, s);
+    (void)hdc; // Unused parameter
+    r_clear(s, 0.08f, 0.08f, 0.08f); // Sleek darker premium background
+
+    if (s->count == 0 || s->selected_index < 0 || s->selected_index >= s->count) {
+        r_present(s);
+        return;
+    }
+
+    // Try loading full-resolution image when debounce delay has expired
+    if (s->full_load_timer <= 0.0) {
+        r_load_full_image(s, s->images[s->selected_index].path);
+    }
+
+    static InstanceData instances[4096];
+    int inst_count = 0;
+
+    // --- 1. Main Image Area ---
+    float main_x = 20.0f;
+    float main_y = 70.0f;
+    float main_w = (float)s->window_width - 40.0f;
+    float main_h = (float)s->window_height - 230.0f; // Height minus top area and bottom strip
+
+    if (main_w > 0 && main_h > 0) {
+        if (s->full_srv && s->full_texture_w > 0 && s->full_texture_h > 0) {
+            // Render with true aspect ratio!
+            float img_w = (float)s->full_texture_w;
+            float img_h = (float)s->full_texture_h;
+            float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
+            float display_w = img_w * scale;
+            float display_h = img_h * scale;
+            float display_x = main_x + (main_w - display_w) / 2.0f;
+            float display_y = main_y + (main_h - display_h) / 2.0f;
+
+            // Draw full high-resolution image!
+            instances[inst_count].x = display_x;
+            instances[inst_count].y = display_y;
+            instances[inst_count].w = display_w;
+            instances[inst_count].h = display_h;
+            instances[inst_count].tex_index = -5; // Samples from register(t1)
+            instances[inst_count].opacity = 1.0f;
+            inst_count++;
+        } else {
+            // Fallback to square thumbnail if loading or failed
+            float sq_size = main_w < main_h ? main_w : main_h;
+            float display_x = main_x + (main_w - sq_size) / 2.0f;
+            float display_y = main_y + (main_h - sq_size) / 2.0f;
+
+            int active_idx = s->selected_index;
+            if (s->images[active_idx].state == IMG_STATE_NEW && !s->images[active_idx].thumb_requested) {
+                s->images[active_idx].thumb_requested = 1;
+                aw_request_thumbnail(s, s->images[active_idx].path, THUMB_SIZE, s->hwnd);
+            }
+
+            instances[inst_count].x = display_x;
+            instances[inst_count].y = display_y;
+            instances[inst_count].w = sq_size;
+            instances[inst_count].h = sq_size;
+            instances[inst_count].tex_index = (s->images[active_idx].state == IMG_STATE_RESIDENT_GPU) ? s->images[active_idx].texture_slot : -1;
+            instances[inst_count].opacity = 1.0f;
+
+            if (s->images[active_idx].state == IMG_STATE_RESIDENT_GPU && s->images[active_idx].texture_slot != -1) {
+                s->tex_pool.last_used[s->images[active_idx].texture_slot] = s->tex_pool.frame_counter;
+            }
+            inst_count++;
+        }
+    }
+
+    // --- 2. Back Button ---
+    instances[inst_count].x = 20.0f;
+    instances[inst_count].y = 20.0f;
+    instances[inst_count].w = 80.0f;
+    instances[inst_count].h = 30.0f;
+    instances[inst_count].tex_index = -3; // Translucent dark gray
+    instances[inst_count].opacity = 0.8f;
+    inst_count++;
+
+    // --- 3. Info Button ---
+    float info_btn_x = (float)s->window_width - 100.0f;
+    if (s->info_open) {
+        // Thin white border for active info button
+        instances[inst_count].x = info_btn_x - 2.0f;
+        instances[inst_count].y = 18.0f;
+        instances[inst_count].w = 84.0f;
+        instances[inst_count].h = 34.0f;
+        instances[inst_count].tex_index = -2; // White border
+        instances[inst_count].opacity = 0.9f;
+        inst_count++;
+    }
+    instances[inst_count].x = info_btn_x;
+    instances[inst_count].y = 20.0f;
+    instances[inst_count].w = 80.0f;
+    instances[inst_count].h = 30.0f;
+    instances[inst_count].tex_index = -3;
+    instances[inst_count].opacity = 0.8f;
+    inst_count++;
+
+    // --- 4. Bottom Strip ---
+    float strip_y = (float)s->window_height - 130.0f;
+
+    // Previous Arrow <
+    instances[inst_count].x = 20.0f;
+    instances[inst_count].y = strip_y + 35.0f;
+    instances[inst_count].w = 30.0f;
+    instances[inst_count].h = 30.0f;
+    instances[inst_count].tex_index = -3;
+    instances[inst_count].opacity = 0.8f;
+    inst_count++;
+
+    // Next Arrow >
+    instances[inst_count].x = (float)s->window_width - 50.0f;
+    instances[inst_count].y = strip_y + 35.0f;
+    instances[inst_count].w = 30.0f;
+    instances[inst_count].h = 30.0f;
+    instances[inst_count].tex_index = -3;
+    instances[inst_count].opacity = 0.8f;
+    inst_count++;
+
+    // Bottom strip thumbnails window centered around s->selected_index
+    float avail_w = (float)s->window_width - 140.0f; // Width between arrows
+    int thumb_w = 80;
+    int thumb_h = 80;
+    int thumb_pad = 10;
+    int col_w = thumb_w + thumb_pad;
+
+    int num_strip_thumbs = (int)(avail_w / col_w);
+    if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+    if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+
+    int half_n = num_strip_thumbs / 2;
+    int start_idx = s->selected_index - half_n;
+    if (start_idx < 0) start_idx = 0;
+    int end_idx = start_idx + num_strip_thumbs - 1;
+    if (end_idx >= s->count) {
+        end_idx = s->count - 1;
+        start_idx = end_idx - num_strip_thumbs + 1;
+        if (start_idx < 0) start_idx = 0;
+    }
+
+    float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
+    float thumbs_start_x = 55.0f + (avail_w - total_thumbs_w) / 2.0f;
+
+    for (int i = start_idx; i <= end_idx; i++) {
+        float tx = thumbs_start_x + (float)((i - start_idx) * col_w);
+        float ty = strip_y + 10.0f;
+
+        // Lazy load strip thumbnails
+        if (s->images[i].state == IMG_STATE_NEW && !s->images[i].thumb_requested) {
+            s->images[i].thumb_requested = 1;
+            aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
+        }
+
+        // Draw selection border if active
+        if (i == s->selected_index) {
+            instances[inst_count].x = tx - 4.0f;
+            instances[inst_count].y = ty - 4.0f;
+            instances[inst_count].w = (float)(thumb_w + 8);
+            instances[inst_count].h = (float)(thumb_h + 8);
+            instances[inst_count].tex_index = -2; // White border
+            instances[inst_count].opacity = 1.0f;
+            inst_count++;
+        }
+
+        // Draw thumbnail
+        instances[inst_count].x = tx;
+        instances[inst_count].y = ty;
+        instances[inst_count].w = (float)thumb_w;
+        instances[inst_count].h = (float)thumb_h;
+        instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : -1;
+        instances[inst_count].opacity = 1.0f;
+
+        if (s->images[i].state == IMG_STATE_RESIDENT_GPU && s->images[i].texture_slot != -1) {
+            s->tex_pool.last_used[s->images[i].texture_slot] = s->tex_pool.frame_counter;
+        }
+        inst_count++;
+    }
+
+    // --- 5. Info Overlay Box ---
+    float info_x = (float)s->window_width - 320.0f;
+    float info_y = 60.0f;
+    float info_w = 300.0f;
+    float info_h = 220.0f;
+
+    if (s->info_open) {
+        // Underlay white border
+        instances[inst_count].x = info_x - 1.0f;
+        instances[inst_count].y = info_y - 1.0f;
+        instances[inst_count].w = info_w + 2.0f;
+        instances[inst_count].h = info_h + 2.0f;
+        instances[inst_count].tex_index = -2; // White border
+        instances[inst_count].opacity = 0.5f; // Premium semi-translucent border
+        inst_count++;
+
+        // Solid background
+        instances[inst_count].x = info_x;
+        instances[inst_count].y = info_y;
+        instances[inst_count].w = info_w;
+        instances[inst_count].h = info_h;
+        instances[inst_count].tex_index = -3; // Dark gray
+        instances[inst_count].opacity = 0.95f;
+        inst_count++;
+    }
+
+    // Draw all D3D11 geometry
+    r_draw_instances(s, instances, inst_count);
+
+    // Draw Back and Info Button text
+    r_draw_text(s, L"< back", 32.0f, 25.0f, 60.0f, 25.0f);
+    r_draw_text(s, L"\x24D8 info", info_btn_x + 15.0f, 25.0f, 60.0f, 25.0f);
+
+    // Draw previous/next strip buttons
+    r_draw_text(s, L"<", 30.0f, strip_y + 40.0f, 20.0f, 20.0f);
+    r_draw_text(s, L">", (float)s->window_width - 40.0f, strip_y + 40.0f, 20.0f, 20.0f);
+
+    // Draw Metadata Card details
+    if (s->info_open) {
+        ImageEntry *e = &s->images[s->selected_index];
+        if (e->full_width == 0) {
+            int w = 0, h = 0;
+            if (il_get_image_dimensions(e->path, &w, &h)) {
+                e->full_width = (uint16_t)w;
+                e->full_height = (uint16_t)h;
+            }
+        }
+
+        // Fetch actual texture size if loaded in high-res D3D slot
+        int actual_w = e->full_width;
+        int actual_h = e->full_height;
+        if (s->full_texture_w > 0 && s->full_texture_h > 0 && _wcsicmp(s->full_loaded_path, e->path) == 0) {
+            actual_w = s->full_texture_w;
+            actual_h = s->full_texture_h;
+        }
+
+        wchar_t sz_buf[64] = {0};
+        format_size(e->file_size, sz_buf, 64);
+
+        wchar_t tc_buf[64] = {0};
+        format_filetime(e->created_time, tc_buf, 64);
+
+        wchar_t tm_buf[64] = {0};
+        format_filetime(e->last_modified, tm_buf, 64);
+
+        wchar_t dim_buf[64] = {0};
+        if (actual_w > 0 && actual_h > 0) {
+            swprintf(dim_buf, 64, L"%d x %d", actual_w, actual_h);
+        } else {
+            wcscpy(dim_buf, L"Unknown");
+        }
+
+        // Limit path display to avoid overflow
+        wchar_t path_trunc[128] = {0};
+        if (wcslen(e->path) > 30) {
+            swprintf(path_trunc, 128, L"...%ls", e->path + wcslen(e->path) - 27);
+        } else {
+            wcscpy(path_trunc, e->path);
+        }
+
+        wchar_t name_trunc[128] = {0};
+        if (wcslen(e->filename) > 22) {
+            swprintf(name_trunc, 128, L"%.19ls...", e->filename);
+        } else {
+            wcscpy(name_trunc, e->filename);
+        }
+
+        // Render line items beautiful Segoe UI text
+        r_draw_text(s, L"IMAGE METADATA", info_x + 15.0f, info_y + 15.0f, info_w - 30.0f, 25.0f);
+        
+        wchar_t line[256];
+        swprintf(line, 256, L"Name:  %ls", name_trunc);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 45.0f, info_w - 30.0f, 20.0f);
+
+        swprintf(line, 256, L"Path:  %ls", path_trunc);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 75.0f, info_w - 30.0f, 20.0f);
+
+        swprintf(line, 256, L"Size:  %ls", sz_buf);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 105.0f, info_w - 30.0f, 20.0f);
+
+        swprintf(line, 256, L"Dims:  %ls", dim_buf);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 135.0f, info_w - 30.0f, 20.0f);
+
+        swprintf(line, 256, L"Created:  %ls", tc_buf);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 165.0f, info_w - 30.0f, 20.0f);
+
+        swprintf(line, 256, L"Modified: %ls", tm_buf);
+        r_draw_text(s, line, info_x + 15.0f, info_y + 190.0f, info_w - 30.0f, 20.0f);
+    }
+
+    r_present(s);
+    s->needs_redraw = 0;
+}
+
+int gal_handle_fullimage_click(AppState *s, int x, int y)
+{
+    if (s->view_mode != VIEW_FULLIMAGE) return 0;
+
+    // --- 1. Hit test back button ---
+    if (x >= 20 && x <= 100 && y >= 20 && y <= 50) {
+        gal_close_full(s);
+        return 1;
+    }
+
+    // --- 2. Hit test info button ---
+    if (x >= s->window_width - 100 && x <= s->window_width - 20 && y >= 20 && y <= 50) {
+        s->info_open = !s->info_open;
+        s->needs_redraw = 1;
+        return 1;
+    }
+
+    // --- 3. Click inside Info Box & Click Outside handling ---
+    int closed_info = 0;
+    if (s->info_open) {
+        float info_x = (float)s->window_width - 320.0f;
+        float info_y = 60.0f;
+        float info_w = 300.0f;
+        float info_h = 220.0f;
+        if (x >= info_x && x <= info_x + info_w && y >= info_y && y <= info_y + info_h) {
+            return 1; // Click inside info box -> consume click
+        }
+        // Click was outside info box -> close it
+        s->info_open = 0;
+        s->needs_redraw = 1;
+        closed_info = 1;
+    }
+
+    // --- 4. Bottom Navigation Strip ---
+    float strip_y = (float)s->window_height - 130.0f;
+    float strip_h = 100.0f;
+
+    if (y >= strip_y && y <= strip_y + strip_h) {
+        // Prev Arrow <
+        if (x >= 20 && x <= 50) {
+            int new_idx = s->selected_index - 1;
+            if (new_idx >= 0) {
+                r_free_full_image(s);
+                s->full_load_timer = 0.15;
+                s->selected_index = new_idx;
+                s->needs_redraw = 1;
+            }
+            return 1;
+        }
+
+        // Next Arrow >
+        if (x >= s->window_width - 50 && x <= s->window_width - 20) {
+            int new_idx = s->selected_index + 1;
+            if (new_idx < s->count) {
+                r_free_full_image(s);
+                s->full_load_timer = 0.15;
+                s->selected_index = new_idx;
+                s->needs_redraw = 1;
+            }
+            return 1;
+        }
+
+        // Individual thumbnail hit testing in the strip
+        float avail_w = (float)s->window_width - 140.0f;
+        int thumb_w = 80;
+        int thumb_pad = 10;
+        int col_w = thumb_w + thumb_pad;
+
+        int num_strip_thumbs = (int)(avail_w / col_w);
+        if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+        if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+
+        int half_n = num_strip_thumbs / 2;
+        int start_idx = s->selected_index - half_n;
+        if (start_idx < 0) start_idx = 0;
+        int end_idx = start_idx + num_strip_thumbs - 1;
+        if (end_idx >= s->count) {
+            end_idx = s->count - 1;
+            start_idx = end_idx - num_strip_thumbs + 1;
+            if (start_idx < 0) start_idx = 0;
+        }
+
+        float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
+        float thumbs_start_x = 55.0f + (avail_w - total_thumbs_w) / 2.0f;
+
+        for (int i = start_idx; i <= end_idx; i++) {
+            float tx = thumbs_start_x + (float)((i - start_idx) * col_w);
+            float ty = strip_y + 10.0f;
+
+            if (x >= tx && x <= tx + thumb_w && y >= ty && y <= ty + thumb_w) {
+                if (s->selected_index != i) {
+                    r_free_full_image(s);
+                    s->full_load_timer = 0.15;
+                    s->selected_index = i;
+                    s->needs_redraw = 1;
+                }
+                return 1;
+            }
+        }
+    }
+
+    return closed_info;
 }
