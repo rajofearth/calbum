@@ -209,10 +209,12 @@ void gal_select_full_image(AppState *s, int index)
 {
     if (index < 0 || index >= s->count) return;
 
-    r_free_full_image(s);
     s->selected_index = index;
     s->zoom_level = 1.0f;
     s->zoom_ui_timer = 0.0f;
+    s->zoom_pan_x = 0.0f;
+    s->zoom_pan_y = 0.0f;
+    s->is_panning = 0;
 
     if (s->images) {
         ImageEntry *e = &s->images[index];
@@ -246,6 +248,7 @@ void gal_open_full(AppState *s, int index)
 void gal_close_full(AppState *s)
 {
     s->view_mode = VIEW_GALLERY;
+    r_free_full_image(s);
     s->needs_redraw = 1;
 }
 
@@ -424,8 +427,39 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     }
 
     // Try loading full-resolution image when debounce delay has expired
-    if (s->full_load_timer <= 0.0) {
-        r_load_full_image(s, s->images[s->selected_index].path);
+    if (s->images && s->full_load_timer <= 0.0) {
+        if (r_load_full_image(s, s->images[s->selected_index].path)) {
+            // Preload ALL visible images in the bottom strip in memory parallelly (staggered, 1 per frame)
+            float main_w = (float)s->window_width - 40.0f;
+            float avail_w = main_w - 100.0f;
+            int thumb_w = 80;
+            int thumb_pad = 10;
+            int col_w = thumb_w + thumb_pad;
+
+            int num_strip_thumbs = (int)(avail_w / col_w);
+            if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+            if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+
+            int half_n = num_strip_thumbs / 2;
+            int start_idx = s->selected_index - half_n;
+            if (start_idx < 0) start_idx = 0;
+            int end_idx = start_idx + num_strip_thumbs - 1;
+            if (end_idx >= s->count) {
+                end_idx = s->count - 1;
+                start_idx = end_idx - num_strip_thumbs + 1;
+                if (start_idx < 0) start_idx = 0;
+            }
+
+            for (int i = start_idx; i <= end_idx; i++) {
+                if (i == s->selected_index) continue;
+                if (!r_get_full_image_slot(s, s->images[i].path)) {
+                    r_load_full_image(s, s->images[i].path);
+                    s->needs_redraw = 1; // trigger another render on next frame to stagger load
+                    break;
+                }
+            }
+
+        }
     }
 
     static InstanceData instances[4096];
@@ -438,15 +472,16 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     float main_h = (float)s->window_height - 230.0f; // Height minus top area and bottom strip
 
     if (main_w > 0 && main_h > 0) {
-        if (s->full_srv && s->full_texture_w > 0 && s->full_texture_h > 0) {
-            // Render with true aspect ratio & zoom!
-            float img_w = (float)s->full_texture_w;
-            float img_h = (float)s->full_texture_h;
+        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, s->images[s->selected_index].path) : NULL;
+        if (slot && slot->w > 0 && slot->h > 0) {
+            // Render with true aspect ratio, zoom & panning!
+            float img_w = (float)slot->w;
+            float img_h = (float)slot->h;
             float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
             float display_w = img_w * scale * s->zoom_level;
             float display_h = img_h * scale * s->zoom_level;
-            float display_x = main_x + (main_w - display_w) / 2.0f;
-            float display_y = main_y + (main_h - display_h) / 2.0f;
+            float display_x = main_x + (main_w - display_w) / 2.0f + s->zoom_pan_x;
+            float display_y = main_y + (main_h - display_h) / 2.0f + s->zoom_pan_y;
 
             // Draw full high-resolution image!
             instances[inst_count].x = display_x;
@@ -456,52 +491,24 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].tex_index = -5; // Samples from register(t1)
             instances[inst_count].opacity = 1.0f;
             inst_count++;
-        } else {
-            // Draw low-res fallback thumbnail with aspect-ratio centering & zoom!
-            int active_idx = s->selected_index;
-            ImageEntry *e = &s->images[active_idx];
-            if (e->texture_slot == -1 && !e->thumb_requested) {
-                e->thumb_requested = 1;
-                aw_request_thumbnail(s, e->path, THUMB_SIZE, s->hwnd);
-            }
 
-            float display_w = main_w;
-            float display_h = main_h;
-            float display_x = main_x;
-            float display_y = main_y;
-            if (e->full_width > 0 && e->full_height > 0) {
-                float img_w = (float)e->full_width;
-                float img_h = (float)e->full_height;
-                float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
-                display_w = img_w * scale * s->zoom_level;
-                display_h = img_h * scale * s->zoom_level;
-                display_x = main_x + (main_w - display_w) / 2.0f;
-                display_y = main_y + (main_h - display_h) / 2.0f;
-            } else {
-                float sq_size = main_w < main_h ? main_w : main_h;
-                display_w = sq_size * s->zoom_level;
-                display_h = sq_size * s->zoom_level;
-                display_x = main_x + (main_w - display_w) / 2.0f;
-                display_y = main_y + (main_h - display_h) / 2.0f;
-            }
-
-            instances[inst_count].x = display_x;
-            instances[inst_count].y = display_y;
-            instances[inst_count].w = display_w;
-            instances[inst_count].h = display_h;
-            instances[inst_count].tex_index = e->texture_slot;
-            instances[inst_count].opacity = 1.0f;
-
-            if (e->texture_slot != -1) {
-                s->tex_pool.last_used[e->texture_slot] = s->tex_pool.frame_counter;
-            }
-            inst_count++;
+            // Ensure active_full_srv matches the geometry we just submitted
+            s->active_full_srv = slot->srv;
         }
     }
 
     POINT pt;
     GetCursorPos(&pt);
     ScreenToClient(s->hwnd, &pt);
+
+    // Solid top letterbox panel mask (masks zoomed overflow behind top controls)
+    instances[inst_count].x = 0.0f;
+    instances[inst_count].y = 0.0f;
+    instances[inst_count].w = (float)s->window_width;
+    instances[inst_count].h = 70.0f;
+    instances[inst_count].tex_index = -3; // Solid dark gray backplate
+    instances[inst_count].opacity = 1.0f;
+    inst_count++;
 
     // --- 2. Back Button ---
     ui_button(instances, &inst_count, 20.0f, 20.0f, 80.0f, 30.0f, 0.8f, (float)pt.x, (float)pt.y);
@@ -681,9 +688,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         // Fetch actual texture size if loaded in high-res D3D slot
         int actual_w = e->full_width;
         int actual_h = e->full_height;
-        if (s->full_texture_w > 0 && s->full_texture_h > 0 && _wcsicmp(s->full_loaded_path, e->path) == 0) {
-            actual_w = s->full_texture_w;
-            actual_h = s->full_texture_h;
+        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, e->path) : NULL;
+        if (slot && slot->w > 0 && slot->h > 0) {
+            actual_w = slot->w;
+            actual_h = slot->h;
         }
 
         wchar_t sz_buf[64] = {0};
@@ -771,6 +779,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
             s->zoom_level = 1.0f;
             s->zoom_ui_timer = 0.0f;
+            gal_clamp_zoom_pan(s);
             s->needs_redraw = 1;
             return 1;
         }
@@ -852,4 +861,51 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     }
 
     return closed_info;
+}
+
+void gal_clamp_zoom_pan(AppState *s)
+{
+    if (s->zoom_level <= 1.0f) {
+        s->zoom_level = 1.0f;
+        s->zoom_pan_x = 0.0f;
+        s->zoom_pan_y = 0.0f;
+        s->is_panning = 0;
+        return;
+    }
+    if (s->zoom_level > 8.0f) {
+        s->zoom_level = 8.0f;
+    }
+
+    float img_w = 0.0f, img_h = 0.0f;
+    if (s->count > 0 && s->selected_index >= 0 && s->selected_index < s->count) {
+        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, s->images[s->selected_index].path) : NULL;
+        if (slot && slot->texture) {
+            img_w = (float)slot->w;
+            img_h = (float)slot->h;
+        } else {
+            ImageEntry *e = s->images ? &s->images[s->selected_index] : NULL;
+            if (e) {
+                img_w = (float)e->full_width;
+                img_h = (float)e->full_height;
+            }
+        }
+    }
+    if (img_w <= 0.0f || img_h <= 0.0f) {
+        img_w = (float)s->window_width;
+        img_h = (float)s->window_height;
+    }
+
+    float main_w = (float)s->window_width - 40.0f;
+    float main_h = (float)s->window_height - 230.0f;
+    float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
+    float display_w = img_w * scale * s->zoom_level;
+    float display_h = img_h * scale * s->zoom_level;
+
+    float max_pan_x = (display_w > main_w) ? (display_w - main_w) / 2.0f : 0.0f;
+    float max_pan_y = (display_h > main_h) ? (display_h - main_h) / 2.0f : 0.0f;
+
+    if (s->zoom_pan_x < -max_pan_x) s->zoom_pan_x = -max_pan_x;
+    if (s->zoom_pan_x > max_pan_x) s->zoom_pan_x = max_pan_x;
+    if (s->zoom_pan_y < -max_pan_y) s->zoom_pan_y = -max_pan_y;
+    if (s->zoom_pan_y > max_pan_y) s->zoom_pan_y = max_pan_y;
 }

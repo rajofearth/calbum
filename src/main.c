@@ -214,6 +214,7 @@ static void on_keydown(HWND hwnd, int vk)
         case VK_ADD: {
             g_state.zoom_level *= 1.1f;
             if (g_state.zoom_level > 8.0f) g_state.zoom_level = 8.0f;
+            gal_clamp_zoom_pan(&g_state);
             g_state.zoom_ui_timer = 2.0f;
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd, NULL, TRUE);
@@ -222,7 +223,7 @@ static void on_keydown(HWND hwnd, int vk)
         case 0xBD: // '-'
         case VK_SUBTRACT: {
             g_state.zoom_level /= 1.1f;
-            if (g_state.zoom_level < 1.0f) g_state.zoom_level = 1.0f;
+            gal_clamp_zoom_pan(&g_state);
             g_state.zoom_ui_timer = 2.0f;
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd, NULL, TRUE);
@@ -262,6 +263,13 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
     if (g_state.view_mode == VIEW_FULLIMAGE) {
         if (gal_handle_fullimage_click(&g_state, x, y)) {
             InvalidateRect(hwnd, NULL, TRUE);
+        } else if (g_state.zoom_level > 1.0f) {
+            g_state.is_panning = 1;
+            g_state.pan_start_x = (float)x;
+            g_state.pan_start_y = (float)y;
+            g_state.pan_orig_x = g_state.zoom_pan_x;
+            g_state.pan_orig_y = g_state.zoom_pan_y;
+            SetCapture(hwnd);
         }
         return;
     }
@@ -291,8 +299,8 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
 
 static void on_mouse_move(HWND hwnd, int x, int y)
 {
-    (void)x;
     if (g_state.is_dragging_scrollbar) {
+        (void)x;
         int ms = gal_max_scroll(&g_state);
         if (ms > 0) {
             float track_h = (float)g_state.window_height - 16.0f;
@@ -314,6 +322,16 @@ static void on_mouse_move(HWND hwnd, int x, int y)
                 InvalidateRect(hwnd, NULL, TRUE);
             }
         }
+    } else if (g_state.view_mode == VIEW_FULLIMAGE && g_state.is_panning) {
+        float dx = (float)x - g_state.pan_start_x;
+        float dy = (float)y - g_state.pan_start_y;
+        g_state.zoom_pan_x = g_state.pan_orig_x + dx;
+        g_state.zoom_pan_y = g_state.pan_orig_y + dy;
+
+        gal_clamp_zoom_pan(&g_state);
+
+        g_state.needs_redraw = 1;
+        InvalidateRect(hwnd, NULL, TRUE);
     }
 }
 
@@ -323,6 +341,11 @@ static void on_lbutton_up(HWND hwnd, int x, int y)
     if (g_state.is_dragging_scrollbar) {
         g_state.is_dragging_scrollbar = 0;
         ReleaseCapture();
+    }
+    if (g_state.is_panning) {
+        g_state.is_panning = 0;
+        ReleaseCapture();
+        InvalidateRect(hwnd, NULL, TRUE);
     }
 }
 
@@ -344,8 +367,7 @@ static void on_mousewheel(HWND hwnd, int delta)
     } else {
         float factor = (delta > 0) ? 1.1f : 0.9f;
         g_state.zoom_level *= factor;
-        if (g_state.zoom_level < 1.0f) g_state.zoom_level = 1.0f;
-        if (g_state.zoom_level > 8.0f) g_state.zoom_level = 8.0f;
+        gal_clamp_zoom_pan(&g_state);
         g_state.zoom_ui_timer = 2.0f;
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd, NULL, TRUE);

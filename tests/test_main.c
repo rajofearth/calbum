@@ -272,6 +272,59 @@ static void test_zoom_and_recovery(void)
     
     free(s.images);
     PASS();
+
+    TEST("cache eviction rules when pool is full");
+    s.count = 10;
+    s.selected_index = 5;
+    s.images = malloc(sizeof(ImageEntry) * 10);
+    memset(s.images, 0, sizeof(ImageEntry) * 10);
+    for (int i = 0; i < 10; i++) {
+        wchar_t path_buf[32];
+        swprintf(path_buf, 32, L"path%d.jpg", i);
+        s.images[i].path = wcsdup(path_buf);
+    }
+    s.window_width = 1200;
+    s.window_height = 800;
+
+    memset(s.full_slots, 0, sizeof(s.full_slots));
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        s.full_slots[i].texture = (void*)1;
+        if (i == 0) {
+            wcscpy(s.full_slots[i].path, L"path9.jpg");
+        } else {
+            wcscpy(s.full_slots[i].path, L"path5.jpg");
+        }
+    }
+
+    int allocated = r_alloc_full_image_slot(&s);
+    CHECK(allocated == 0, "should evict slot 0 holding path9.jpg (off-strip)");
+    CHECK(s.full_slots[0].texture == NULL, "slot 0 texture should be released");
+
+    for (int i = 0; i < 10; i++) {
+        free(s.images[i].path);
+    }
+    free(s.images);
+    PASS();
+
+    TEST("select full image resets panning offsets");
+    s.images = malloc(sizeof(ImageEntry) * 5);
+    memset(s.images, 0, sizeof(ImageEntry) * 5);
+    s.images[0].path = L"path0.jpg";
+    s.images[1].path = L"path1.jpg";
+    
+    s.zoom_pan_x = 100.0f;
+    s.zoom_pan_y = -50.0f;
+    s.is_panning = 1;
+    s.zoom_level = 2.0f;
+
+    gal_select_full_image(&s, 1);
+    CHECK(s.zoom_pan_x == 0.0f, "zoom_pan_x reset");
+    CHECK(s.zoom_pan_y == 0.0f, "zoom_pan_y reset");
+    CHECK(s.is_panning == 0, "is_panning reset");
+    CHECK(s.zoom_level == 1.0f, "zoom_level reset");
+
+    free(s.images);
+    PASS();
 }
 
 // ── Main ────────────────────────────────────────────────────────────────

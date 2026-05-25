@@ -214,6 +214,14 @@ typedef struct {
     int                       frame_counter;
 } GPUTexturePool;
 
+typedef struct {
+    ID3D11Texture2D*          texture;
+    ID3D11ShaderResourceView* srv;
+    wchar_t                   path[MAX_PATH_LEN];
+    int                       w;
+    int                       h;
+} FullImageSlot;
+
 typedef struct AppState {
     // View mode
     ViewMode    view_mode;
@@ -290,15 +298,23 @@ typedef struct AppState {
     // Current directory
     wchar_t     current_dir[MAX_PATH_LEN];
 
-    // Full Image Texture
-    ID3D11Texture2D*          full_texture;
-    ID3D11ShaderResourceView* full_srv;
-    wchar_t                   full_loaded_path[MAX_PATH_LEN];
-    int                       full_texture_w;
-    int                       full_texture_h;
+#define FULL_CACHE_SIZE 32
+
+    // High-Resolution Cache Pool & preloading Pipeline
+    FullImageSlot             full_slots[FULL_CACHE_SIZE];
+    ID3D11ShaderResourceView* active_full_srv;
     double                    full_load_timer;
     float                     zoom_level;
     float                     zoom_ui_timer;
+
+    // Centered Zoom Panning
+    float                     zoom_pan_x;
+    float                     zoom_pan_y;
+    int                       is_panning;
+    float                     pan_start_x;
+    float                     pan_start_y;
+    float                     pan_orig_x;
+    float                     pan_orig_y;
 } AppState;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -338,6 +354,7 @@ DWORD WINAPI aw_worker_thread(LPVOID param);
 // gallery.c
 void  gal_render_gallery(HDC hdc, AppState *s);
 void  gal_render_fullimage(HDC hdc, AppState *s);
+void  gal_clamp_zoom_pan(AppState *s);
 int   gal_hit_test(AppState *s, int x, int y, int *out_index);
 int   gal_handle_ui_click(AppState *s, int x, int y);
 int   gal_handle_fullimage_click(AppState *s, int x, int y);
@@ -371,3 +388,6 @@ void r_draw_instances(AppState *s, void *instances, int count);
 void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h);
 int  r_load_full_image(AppState *s, const wchar_t *path);
 void r_free_full_image(AppState *s);
+FullImageSlot* r_get_full_image_slot(AppState *s, const wchar_t *path);
+void r_free_full_image_slot(AppState *s, int i);
+int  r_alloc_full_image_slot(AppState *s);

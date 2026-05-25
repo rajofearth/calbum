@@ -146,6 +146,15 @@ int r_init(AppState *s)
     for(int i=0; i<MAX_GPU_TEXTURES; i++) s->tex_pool.last_used[i] = -1;
     s->tex_pool.frame_counter = 0;
 
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        s->full_slots[i].texture = NULL;
+        s->full_slots[i].srv = NULL;
+        s->full_slots[i].path[0] = L'\0';
+        s->full_slots[i].w = 0;
+        s->full_slots[i].h = 0;
+    }
+    s->active_full_srv = NULL;
+
     // Init D2D1 and DirectWrite
     D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &IID_ID2D1Factory, NULL, (void**)&s->d2d_factory);
     DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IID_IDWriteFactory, (IUnknown**)&s->dwrite_factory);
@@ -302,7 +311,7 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->PSSetShader(s->d3d_context, s->ps, NULL, 0);
     s->d3d_context->lpVtbl->PSSetSamplers(s->d3d_context, 0, 1, &s->sampler);
 
-    ID3D11ShaderResourceView* srvs[2] = { s->tex_pool.texture_array_srv, s->full_srv };
+    ID3D11ShaderResourceView* srvs[2] = { s->tex_pool.texture_array_srv, s->active_full_srv };
     s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 2, srvs);
 
     s->d3d_context->lpVtbl->DrawInstanced(s->d3d_context, 4, count, 0, 0);
@@ -322,8 +331,11 @@ void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, fl
 
 void r_shutdown(AppState *s)
 {
-    if (s->full_srv) { s->full_srv->lpVtbl->Release(s->full_srv); s->full_srv = NULL; }
-    if (s->full_texture) { s->full_texture->lpVtbl->Release(s->full_texture); s->full_texture = NULL; }
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        if (s->full_slots[i].srv) { s->full_slots[i].srv->lpVtbl->Release(s->full_slots[i].srv); s->full_slots[i].srv = NULL; }
+        if (s->full_slots[i].texture) { s->full_slots[i].texture->lpVtbl->Release(s->full_slots[i].texture); s->full_slots[i].texture = NULL; }
+    }
+    s->active_full_srv = NULL;
     if (s->tex_pool.texture_array_srv) s->tex_pool.texture_array_srv->lpVtbl->Release(s->tex_pool.texture_array_srv);
     if (s->tex_pool.texture_array) s->tex_pool.texture_array->lpVtbl->Release(s->tex_pool.texture_array);
     if (s->sampler) s->sampler->lpVtbl->Release(s->sampler);
@@ -345,14 +357,89 @@ void r_shutdown(AppState *s)
     if (s->d3d_device) s->d3d_device->lpVtbl->Release(s->d3d_device);
 }
 
+FullImageSlot* r_get_full_image_slot(AppState *s, const wchar_t *path)
+{
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        if (s->full_slots[i].texture && _wcsicmp(s->full_slots[i].path, path) == 0) {
+            return &s->full_slots[i];
+        }
+    }
+    return NULL;
+}
+
+void r_free_full_image_slot(AppState *s, int i)
+{
+    if (i < 0 || i >= FULL_CACHE_SIZE) return;
+    if (s->d3d_device) {
+        if (s->full_slots[i].srv) { s->full_slots[i].srv->lpVtbl->Release(s->full_slots[i].srv); s->full_slots[i].srv = NULL; }
+        if (s->full_slots[i].texture) { s->full_slots[i].texture->lpVtbl->Release(s->full_slots[i].texture); s->full_slots[i].texture = NULL; }
+    } else {
+        s->full_slots[i].srv = NULL;
+        s->full_slots[i].texture = NULL;
+    }
+    s->full_slots[i].path[0] = L'\0';
+    s->full_slots[i].w = 0;
+    s->full_slots[i].h = 0;
+}
+
+int r_alloc_full_image_slot(AppState *s)
+{
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        if (!s->full_slots[i].texture) {
+            return i;
+        }
+    }
+
+    int start_idx = 0;
+    int end_idx = 0;
+    if (s->images && s->count > 0) {
+        float main_w = (float)s->window_width - 40.0f;
+        float avail_w = main_w - 100.0f;
+        int thumb_w = 80;
+        int thumb_pad = 10;
+        int col_w = thumb_w + thumb_pad;
+
+        int num_strip_thumbs = (int)(avail_w / col_w);
+        if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+        if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+
+        int half_n = num_strip_thumbs / 2;
+        start_idx = s->selected_index - half_n;
+        if (start_idx < 0) start_idx = 0;
+        end_idx = start_idx + num_strip_thumbs - 1;
+        if (end_idx >= s->count) {
+            end_idx = s->count - 1;
+            start_idx = end_idx - num_strip_thumbs + 1;
+            if (start_idx < 0) start_idx = 0;
+        }
+    }
+
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        int in_strip = 0;
+        if (s->images) {
+            for (int k = start_idx; k <= end_idx; k++) {
+                if (_wcsicmp(s->full_slots[i].path, s->images[k].path) == 0) {
+                    in_strip = 1;
+                    break;
+                }
+            }
+        }
+        if (!in_strip) {
+            r_free_full_image_slot(s, i);
+            return i;
+        }
+    }
+
+    r_free_full_image_slot(s, 0);
+    return 0;
+}
+
 void r_free_full_image(AppState *s)
 {
-    if (s->full_srv) { s->full_srv->lpVtbl->Release(s->full_srv); s->full_srv = NULL; }
-    if (s->full_texture) { s->full_texture->lpVtbl->Release(s->full_texture); s->full_texture = NULL; }
-    s->full_loaded_path[0] = L'\0';
-    s->full_texture_w = 0;
-    s->full_texture_h = 0;
-
+    for (int i = 0; i < FULL_CACHE_SIZE; i++) {
+        r_free_full_image_slot(s, i);
+    }
+    s->active_full_srv = NULL;
     if (s->d3d_context) {
         s->d3d_context->lpVtbl->Flush(s->d3d_context);
     }
@@ -360,15 +447,18 @@ void r_free_full_image(AppState *s)
 
 int r_load_full_image(AppState *s, const wchar_t *path)
 {
-    if (s->full_texture && _wcsicmp(s->full_loaded_path, path) == 0) {
+    FullImageSlot *slot = r_get_full_image_slot(s, path);
+    if (slot) {
+        s->active_full_srv = slot->srv;
         return 1;
     }
-
-    r_free_full_image(s);
 
     int w = 0, h = 0;
     void *rgba = il_load_full_image(path, &w, &h);
     if (!rgba) return 0;
+
+    int slot_idx = r_alloc_full_image_slot(s);
+    FullImageSlot *new_slot = &s->full_slots[slot_idx];
 
     D3D11_TEXTURE2D_DESC desc = {0};
     desc.Width = (UINT)w;
@@ -384,22 +474,23 @@ int r_load_full_image(AppState *s, const wchar_t *path)
     init_data.pSysMem = rgba;
     init_data.SysMemPitch = (UINT)(w * 4);
 
-    HRESULT hr = s->d3d_device->lpVtbl->CreateTexture2D(s->d3d_device, &desc, &init_data, &s->full_texture);
-
+    HRESULT hr = s->d3d_device->lpVtbl->CreateTexture2D(s->d3d_device, &desc, &init_data, &new_slot->texture);
     if (FAILED(hr)) {
         return 0;
     }
 
-    hr = s->d3d_device->lpVtbl->CreateShaderResourceView(s->d3d_device, (ID3D11Resource*)s->full_texture, NULL, &s->full_srv);
+    hr = s->d3d_device->lpVtbl->CreateShaderResourceView(s->d3d_device, (ID3D11Resource*)new_slot->texture, NULL, &new_slot->srv);
     if (FAILED(hr)) {
-        s->full_texture->lpVtbl->Release(s->full_texture);
-        s->full_texture = NULL;
+        new_slot->texture->lpVtbl->Release(new_slot->texture);
+        new_slot->texture = NULL;
         return 0;
     }
 
-    wcsncpy(s->full_loaded_path, path, MAX_PATH_LEN - 1);
-    s->full_loaded_path[MAX_PATH_LEN - 1] = L'\0';
-    s->full_texture_w = w;
-    s->full_texture_h = h;
+    wcsncpy(new_slot->path, path, MAX_PATH_LEN - 1);
+    new_slot->path[MAX_PATH_LEN - 1] = L'\0';
+    new_slot->w = w;
+    new_slot->h = h;
+
+    s->active_full_srv = new_slot->srv;
     return 1;
 }
