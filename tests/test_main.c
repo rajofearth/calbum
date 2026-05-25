@@ -23,6 +23,7 @@
 #include "lib/stb_image.h"
 #include "src/image_loader.c"
 #include "src/asset_worker.c"
+#include "src/ui.c"
 #include "src/gallery.c"
 
 // ── Test framework ──────────────────────────────────────────────────────
@@ -223,6 +224,56 @@ static void test_fullimage_interactions(void)
     PASS();
 }
 
+static void test_zoom_and_recovery(void)
+{
+    AppState s;
+    setup(&s, 5, 1200, 800);
+    s.view_mode = VIEW_FULLIMAGE;
+    s.selected_index = 2;
+    s.zoom_level = 1.0f;
+    s.zoom_ui_timer = 0.0f;
+
+    TEST("zoom level clamps correctly");
+    s.zoom_level = 1.5f;
+    s.zoom_ui_timer = 2.0f;
+    CHECK(gal_handle_fullimage_click(&s, 600, 35) == 1, "click zoom badge handled");
+    CHECK(s.zoom_level == 1.0f, "zoom level reset to 1.0x");
+    CHECK(s.zoom_ui_timer == 0.0f, "zoom ui timer cleared");
+    PASS();
+
+    TEST("texture eviction sets correct ready states");
+    s.images = malloc(sizeof(ImageEntry) * 5);
+    memset(s.images, 0, sizeof(ImageEntry) * 5);
+    s.images[2].path = L"mock_photo.png";
+    s.images[2].texture_slot = 14;
+    s.images[2].state = IMG_STATE_RESIDENT_GPU;
+    s.images[2].thumb_requested = 1;
+
+    r_evict_texture(&s, 14);
+    CHECK(s.images[2].texture_slot == -1, "slot reset to -1");
+    CHECK(s.images[2].thumb_requested == 0, "thumb_requested reset to 0");
+    CHECK(s.images[2].state == IMG_STATE_READY, "state set to READY");
+    free(s.images);
+    PASS();
+
+    TEST("adaptive load sizing threshold");
+    s.images = malloc(sizeof(ImageEntry) * 2);
+    memset(s.images, 0, sizeof(ImageEntry) * 2);
+    s.images[0].path = L"small.jpg";
+    s.images[0].file_size = 1024ULL * 1024ULL; // 1MB
+    s.images[1].path = L"large.jpg";
+    s.images[1].file_size = 10ULL * 1024ULL * 1024ULL; // 10MB
+    
+    gal_select_full_image(&s, 0);
+    CHECK(s.full_load_timer == 0.0, "small file loaded instantly");
+
+    gal_select_full_image(&s, 1);
+    CHECK(s.full_load_timer == 0.15, "large file debounces for 150ms");
+    
+    free(s.images);
+    PASS();
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 int main(void)
 {
@@ -238,6 +289,7 @@ int main(void)
     test_viewmode();
     test_extensions();
     test_fullimage_interactions();
+    test_zoom_and_recovery();
 
     printf("\n========================================\n");
     printf("  Results: %d/%d passed, %d failed\n", g_pass, g_run, g_fail);

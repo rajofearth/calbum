@@ -297,6 +297,8 @@ typedef struct AppState {
     int                       full_texture_w;
     int                       full_texture_h;
     double                    full_load_timer;
+    float                     zoom_level;
+    float                     zoom_ui_timer;
 } AppState;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -344,6 +346,7 @@ void  gal_scroll(AppState *s, float delta);
 void  gal_update_layout(AppState *s);
 void  gal_open_full(AppState *s, int index);
 void  gal_close_full(AppState *s);
+void  gal_select_full_image(AppState *s, int index);
 void  gal_tick_smooth_scroll(AppState *s);
 
 // renderer.c

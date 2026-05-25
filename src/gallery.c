@@ -205,14 +205,42 @@ int gal_hit_test(AppState *s, int x, int y, int *out_index)
     return 0;
 }
 
+void gal_select_full_image(AppState *s, int index)
+{
+    if (index < 0 || index >= s->count) return;
+
+    r_free_full_image(s);
+    s->selected_index = index;
+    s->zoom_level = 1.0f;
+    s->zoom_ui_timer = 0.0f;
+
+    if (s->images) {
+        ImageEntry *e = &s->images[index];
+        if (e->full_width == 0) {
+            int w = 0, h = 0;
+            if (il_get_image_dimensions(e->path, &w, &h)) {
+                e->full_width = (uint16_t)w;
+                e->full_height = (uint16_t)h;
+            }
+        }
+
+        if (e->file_size < 2 * 1024 * 1024) {
+            s->full_load_timer = 0.0;
+            r_load_full_image(s, e->path);
+        } else {
+            s->full_load_timer = 0.15; // 150ms debounce for files >= 2MB
+        }
+    } else {
+        s->full_load_timer = 0.15;
+    }
+    s->needs_redraw = 1;
+}
+
 void gal_open_full(AppState *s, int index)
 {
     if (index < 0 || index >= s->count) return;
-    r_free_full_image(s);
-    s->selected_index = index;
     s->view_mode = VIEW_FULLIMAGE;
-    s->full_load_timer = 0.0;
-    s->needs_redraw = 1;
+    gal_select_full_image(s, index);
 }
 
 void gal_close_full(AppState *s)
@@ -244,7 +272,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
         if (y + THUMB_SIZE < 0 || y > s->window_height) continue;
 
-        if (s->images[i].state == IMG_STATE_NEW && !s->images[i].thumb_requested) {
+        if (s->images[i].texture_slot == -1 && !s->images[i].thumb_requested) {
             s->images[i].thumb_requested = 1;
             aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
         }
@@ -310,14 +338,12 @@ void gal_render_gallery(HDC hdc, AppState *s)
     int btn_x = s->window_width - btn_w - 20;
     int btn_y = 10;
 
-    // Draw Sort Button BG (translucent)
-    instances[inst_count].x = (float)btn_x;
-    instances[inst_count].y = (float)btn_y;
-    instances[inst_count].w = (float)btn_w;
-    instances[inst_count].h = (float)btn_h;
-    instances[inst_count].tex_index = -3; // 0.2 gray
-    instances[inst_count].opacity = 0.8f;
-    inst_count++;
+    POINT pt;
+    GetCursorPos(&pt);
+    ScreenToClient(s->hwnd, &pt);
+
+    // Draw central IMGUI Sort Button geometry
+    ui_button(instances, &inst_count, (float)btn_x, (float)btn_y, (float)btn_w, (float)btn_h, 0.8f, (float)pt.x, (float)pt.y);
 
     if (s->sort_menu_open) {
         int menu_w = 150;
@@ -325,19 +351,14 @@ void gal_render_gallery(HDC hdc, AppState *s)
         int menu_x = btn_x + btn_w - menu_w;
         int menu_y = btn_y + btn_h + 5;
         
-        // Menu BG
-        instances[inst_count].x = (float)menu_x;
-        instances[inst_count].y = (float)menu_y;
-        instances[inst_count].w = (float)menu_w;
-        instances[inst_count].h = (float)menu_h;
-        instances[inst_count].tex_index = -3; 
-        instances[inst_count].opacity = 0.95f;
-        inst_count++;
+        // Draw Sort Menu panel backplate with border!
+        ui_panel(instances, &inst_count, (float)menu_x, (float)menu_y, (float)menu_w, (float)menu_h, 0.95f, 1);
     }
 
     r_draw_instances(s, instances, inst_count);
 
-    r_draw_text(s, L"Sort \x25BC", (float)(btn_x + 15), (float)(btn_y + 5), (float)btn_w, (float)btn_h);
+    // Draw central IMGUI Sort Button text
+    ui_button_text(s, L"Sort \x25BC", (float)btn_x, (float)btn_y, (float)btn_w, (float)btn_h);
 
     if (s->sort_menu_open) {
         int menu_w = 150;
@@ -418,12 +439,12 @@ void gal_render_fullimage(HDC hdc, AppState *s)
 
     if (main_w > 0 && main_h > 0) {
         if (s->full_srv && s->full_texture_w > 0 && s->full_texture_h > 0) {
-            // Render with true aspect ratio!
+            // Render with true aspect ratio & zoom!
             float img_w = (float)s->full_texture_w;
             float img_h = (float)s->full_texture_h;
             float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
-            float display_w = img_w * scale;
-            float display_h = img_h * scale;
+            float display_w = img_w * scale * s->zoom_level;
+            float display_h = img_h * scale * s->zoom_level;
             float display_x = main_x + (main_w - display_w) / 2.0f;
             float display_y = main_y + (main_h - display_h) / 2.0f;
 
@@ -436,62 +457,81 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].opacity = 1.0f;
             inst_count++;
         } else {
-            // Fallback to square thumbnail if loading or failed
-            float sq_size = main_w < main_h ? main_w : main_h;
-            float display_x = main_x + (main_w - sq_size) / 2.0f;
-            float display_y = main_y + (main_h - sq_size) / 2.0f;
-
+            // Draw low-res fallback thumbnail with aspect-ratio centering & zoom!
             int active_idx = s->selected_index;
-            if (s->images[active_idx].state == IMG_STATE_NEW && !s->images[active_idx].thumb_requested) {
-                s->images[active_idx].thumb_requested = 1;
-                aw_request_thumbnail(s, s->images[active_idx].path, THUMB_SIZE, s->hwnd);
+            ImageEntry *e = &s->images[active_idx];
+            if (e->texture_slot == -1 && !e->thumb_requested) {
+                e->thumb_requested = 1;
+                aw_request_thumbnail(s, e->path, THUMB_SIZE, s->hwnd);
+            }
+
+            float display_w = main_w;
+            float display_h = main_h;
+            float display_x = main_x;
+            float display_y = main_y;
+            if (e->full_width > 0 && e->full_height > 0) {
+                float img_w = (float)e->full_width;
+                float img_h = (float)e->full_height;
+                float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
+                display_w = img_w * scale * s->zoom_level;
+                display_h = img_h * scale * s->zoom_level;
+                display_x = main_x + (main_w - display_w) / 2.0f;
+                display_y = main_y + (main_h - display_h) / 2.0f;
+            } else {
+                float sq_size = main_w < main_h ? main_w : main_h;
+                display_w = sq_size * s->zoom_level;
+                display_h = sq_size * s->zoom_level;
+                display_x = main_x + (main_w - display_w) / 2.0f;
+                display_y = main_y + (main_h - display_h) / 2.0f;
             }
 
             instances[inst_count].x = display_x;
             instances[inst_count].y = display_y;
-            instances[inst_count].w = sq_size;
-            instances[inst_count].h = sq_size;
-            instances[inst_count].tex_index = (s->images[active_idx].state == IMG_STATE_RESIDENT_GPU) ? s->images[active_idx].texture_slot : -1;
+            instances[inst_count].w = display_w;
+            instances[inst_count].h = display_h;
+            instances[inst_count].tex_index = e->texture_slot;
             instances[inst_count].opacity = 1.0f;
 
-            if (s->images[active_idx].state == IMG_STATE_RESIDENT_GPU && s->images[active_idx].texture_slot != -1) {
-                s->tex_pool.last_used[s->images[active_idx].texture_slot] = s->tex_pool.frame_counter;
+            if (e->texture_slot != -1) {
+                s->tex_pool.last_used[e->texture_slot] = s->tex_pool.frame_counter;
             }
             inst_count++;
         }
     }
 
+    POINT pt;
+    GetCursorPos(&pt);
+    ScreenToClient(s->hwnd, &pt);
+
     // --- 2. Back Button ---
-    instances[inst_count].x = 20.0f;
-    instances[inst_count].y = 20.0f;
-    instances[inst_count].w = 80.0f;
-    instances[inst_count].h = 30.0f;
-    instances[inst_count].tex_index = -3; // Translucent dark gray
-    instances[inst_count].opacity = 0.8f;
-    inst_count++;
+    ui_button(instances, &inst_count, 20.0f, 20.0f, 80.0f, 30.0f, 0.8f, (float)pt.x, (float)pt.y);
 
     // --- 3. Info Button ---
     float info_btn_x = (float)s->window_width - 100.0f;
-    if (s->info_open) {
-        // Thin white border for active info button
-        instances[inst_count].x = info_btn_x - 2.0f;
-        instances[inst_count].y = 18.0f;
-        instances[inst_count].w = 84.0f;
-        instances[inst_count].h = 34.0f;
-        instances[inst_count].tex_index = -2; // White border
-        instances[inst_count].opacity = 0.9f;
-        inst_count++;
+    ui_badge(instances, &inst_count, info_btn_x, 20.0f, 80.0f, 30.0f, 0.8f, s->info_open, (float)pt.x, (float)pt.y);
+
+    // --- 3.5 Zoom Level Badge UI ---
+    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f) {
+        float cx = (float)s->window_width / 2.0f;
+        float bx = cx - 60.0f;
+        float by = 20.0f;
+        float bw = 120.0f;
+        float bh = 30.0f;
+        int hovered = (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh);
+        ui_badge(instances, &inst_count, bx, by, bw, bh, 0.8f, hovered, (float)pt.x, (float)pt.y);
     }
-    instances[inst_count].x = info_btn_x;
-    instances[inst_count].y = 20.0f;
-    instances[inst_count].w = 80.0f;
-    instances[inst_count].h = 30.0f;
-    instances[inst_count].tex_index = -3;
-    instances[inst_count].opacity = 0.8f;
-    inst_count++;
 
     // --- 4. Bottom Strip ---
     float strip_y = (float)s->window_height - 130.0f;
+
+    // Solid bottom strip panel backplate (masks zoomed overflow)
+    instances[inst_count].x = 0.0f;
+    instances[inst_count].y = strip_y;
+    instances[inst_count].w = (float)s->window_width;
+    instances[inst_count].h = 130.0f;
+    instances[inst_count].tex_index = -3; // Gray backplate
+    instances[inst_count].opacity = 1.0f;  // Fully solid
+    inst_count++;
 
     // Previous Arrow <
     instances[inst_count].x = 20.0f;
@@ -540,7 +580,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         float ty = strip_y + 10.0f;
 
         // Lazy load strip thumbnails
-        if (s->images[i].state == IMG_STATE_NEW && !s->images[i].thumb_requested) {
+        if (s->images[i].texture_slot == -1 && !s->images[i].thumb_requested) {
             s->images[i].thumb_requested = 1;
             aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
         }
@@ -561,10 +601,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         instances[inst_count].y = ty;
         instances[inst_count].w = (float)thumb_w;
         instances[inst_count].h = (float)thumb_h;
-        instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : -1;
+        instances[inst_count].tex_index = s->images[i].texture_slot;
         instances[inst_count].opacity = 1.0f;
 
-        if (s->images[i].state == IMG_STATE_RESIDENT_GPU && s->images[i].texture_slot != -1) {
+        if (s->images[i].texture_slot != -1) {
             s->tex_pool.last_used[s->images[i].texture_slot] = s->tex_pool.frame_counter;
         }
         inst_count++;
@@ -600,8 +640,28 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     r_draw_instances(s, instances, inst_count);
 
     // Draw Back and Info Button text
-    r_draw_text(s, L"< back", 32.0f, 25.0f, 60.0f, 25.0f);
-    r_draw_text(s, L"\x24D8 info", info_btn_x + 15.0f, 25.0f, 60.0f, 25.0f);
+    ui_button_text(s, L"< back", 20.0f, 20.0f, 80.0f, 30.0f);
+    ui_badge_text(s, L"\x24D8 info", info_btn_x, 20.0f, 80.0f, 30.0f);
+
+    // Draw Zoom Level badge text if active
+    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f) {
+        float cx = (float)s->window_width / 2.0f;
+        float bx = cx - 60.0f;
+        float by = 20.0f;
+        float bw = 120.0f;
+        float bh = 30.0f;
+        POINT m_pt;
+        GetCursorPos(&m_pt);
+        ScreenToClient(s->hwnd, &m_pt);
+        int hovered = (m_pt.x >= bx && m_pt.x <= bx + bw && m_pt.y >= by && m_pt.y <= by + bh);
+        wchar_t zoom_text[64];
+        if (hovered) {
+            wcscpy(zoom_text, L"Reset Zoom");
+        } else {
+            swprintf(zoom_text, 64, L"Zoom: %.0f%%", s->zoom_level * 100.0f);
+        }
+        ui_badge_text(s, zoom_text, bx, by, bw, bh);
+    }
 
     // Draw previous/next strip buttons
     r_draw_text(s, L"<", 30.0f, strip_y + 40.0f, 20.0f, 20.0f);
@@ -701,6 +761,21 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         return 1;
     }
 
+    // --- 2.5 Zoom badge hit test ---
+    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f) {
+        float cx = (float)s->window_width / 2.0f;
+        float bx = cx - 60.0f;
+        float by = 20.0f;
+        float bw = 120.0f;
+        float bh = 30.0f;
+        if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+            s->zoom_level = 1.0f;
+            s->zoom_ui_timer = 0.0f;
+            s->needs_redraw = 1;
+            return 1;
+        }
+    }
+
     // --- 3. Click inside Info Box & Click Outside handling ---
     int closed_info = 0;
     if (s->info_open) {
@@ -726,10 +801,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         if (x >= 20 && x <= 50) {
             int new_idx = s->selected_index - 1;
             if (new_idx >= 0) {
-                r_free_full_image(s);
-                s->full_load_timer = 0.15;
-                s->selected_index = new_idx;
-                s->needs_redraw = 1;
+                gal_select_full_image(s, new_idx);
             }
             return 1;
         }
@@ -738,10 +810,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         if (x >= s->window_width - 50 && x <= s->window_width - 20) {
             int new_idx = s->selected_index + 1;
             if (new_idx < s->count) {
-                r_free_full_image(s);
-                s->full_load_timer = 0.15;
-                s->selected_index = new_idx;
-                s->needs_redraw = 1;
+                gal_select_full_image(s, new_idx);
             }
             return 1;
         }
@@ -775,10 +844,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
 
             if (x >= tx && x <= tx + thumb_w && y >= ty && y <= ty + thumb_w) {
                 if (s->selected_index != i) {
-                    r_free_full_image(s);
-                    s->full_load_timer = 0.15;
-                    s->selected_index = i;
-                    s->needs_redraw = 1;
+                    gal_select_full_image(s, i);
                 }
                 return 1;
             }

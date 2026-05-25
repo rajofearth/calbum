@@ -234,7 +234,8 @@ void r_evict_texture(AppState *s, int slot)
     for (int i = 0; i < s->count; i++) {
         if (s->images[i].texture_slot == slot) {
             s->images[i].texture_slot = -1;
-            if (s->images[i].state == 3) s->images[i].state = 1; // CACHED_ON_DISK
+            s->images[i].thumb_requested = 0;   // Reset request status
+            s->images[i].state = IMG_STATE_READY; // Cached on disk
             break;
         }
     }

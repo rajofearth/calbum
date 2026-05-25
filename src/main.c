@@ -31,11 +31,11 @@ static int image_select_offset(AppState *s, int delta)
     int new_idx = s->selected_index + delta;
     if (new_idx < 0 || new_idx >= s->count) return 0;
     if (s->view_mode == VIEW_FULLIMAGE) {
-        r_free_full_image(s);
-        s->full_load_timer = 0.15; // 150ms debounce
+        gal_select_full_image(s, new_idx);
+    } else {
+        s->selected_index = new_idx;
+        s->needs_redraw = 1;
     }
-    s->selected_index = new_idx;
-    s->needs_redraw = 1;
     return 1;
 }
 
@@ -210,6 +210,24 @@ static void on_keydown(HWND hwnd, int vk)
         case VK_RIGHT: case VK_DOWN:
             if (image_select_offset(&g_state,1)) InvalidateRect(hwnd,NULL,TRUE);
             break;
+        case 0xBB: // '+' or '='
+        case VK_ADD: {
+            g_state.zoom_level *= 1.1f;
+            if (g_state.zoom_level > 8.0f) g_state.zoom_level = 8.0f;
+            g_state.zoom_ui_timer = 2.0f;
+            g_state.needs_redraw = 1;
+            InvalidateRect(hwnd, NULL, TRUE);
+            break;
+        }
+        case 0xBD: // '-'
+        case VK_SUBTRACT: {
+            g_state.zoom_level /= 1.1f;
+            if (g_state.zoom_level < 1.0f) g_state.zoom_level = 1.0f;
+            g_state.zoom_ui_timer = 2.0f;
+            g_state.needs_redraw = 1;
+            InvalidateRect(hwnd, NULL, TRUE);
+            break;
+        }
         }
     } else {
         switch (vk) {
@@ -323,6 +341,14 @@ static void on_mousewheel(HWND hwnd, int delta)
     if (g_state.view_mode == VIEW_GALLERY) {
         gal_scroll(&g_state, (float)(delta / 120 * 60));
         InvalidateRect(hwnd,NULL,TRUE);
+    } else {
+        float factor = (delta > 0) ? 1.1f : 0.9f;
+        g_state.zoom_level *= factor;
+        if (g_state.zoom_level < 1.0f) g_state.zoom_level = 1.0f;
+        if (g_state.zoom_level > 8.0f) g_state.zoom_level = 8.0f;
+        g_state.zoom_ui_timer = 2.0f;
+        g_state.needs_redraw = 1;
+        InvalidateRect(hwnd, NULL, TRUE);
     }
 }
 
@@ -450,7 +476,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
         gal_tick_smooth_scroll(&g_state);
 
-        if (g_state.needs_redraw || (g_state.view_mode == VIEW_FULLIMAGE && g_state.full_load_timer > 0.0)) {
+        if (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0f) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(g_state.hwnd, &pt);
+            float cx = (float)g_state.window_width / 2.0f;
+            int hovered = (pt.x >= cx - 60.0f && pt.x <= cx + 60.0f && pt.y >= 20.0f && pt.y <= 50.0f);
+            if (hovered) {
+                g_state.zoom_ui_timer = 2.0f;
+            } else {
+                g_state.zoom_ui_timer -= (float)g_state.delta_time;
+                if (g_state.zoom_ui_timer < 0.0f) g_state.zoom_ui_timer = 0.0f;
+            }
+            g_state.needs_redraw = 1;
+        }
+
+        if (g_state.needs_redraw || 
+            (g_state.view_mode == VIEW_FULLIMAGE && g_state.full_load_timer > 0.0) ||
+            (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0f)) {
             InvalidateRect(g_state.hwnd, NULL, TRUE);
             UpdateWindow(g_state.hwnd); // Synchronous paint ensures drawing matches physics
         } else {

@@ -34,6 +34,7 @@
 #include "src/asset_worker.c"
 
 // ── 7. Application Logic ───────────────────────────────────────────────
+#include "src/ui.c"
 #include "src/gallery.c"
 #include "src/app.c"
 
