@@ -2,6 +2,7 @@
 // renderer.c — Direct3D 11 Renderer
 // =========================================================================
 #include "types.h"
+#include <dxgi1_2.h>
 #include <d3dcompiler.h>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -13,18 +14,30 @@ static const char* shader_src =
     "    float2 window_size;\n"
     "    float2 padding;\n"
     "};\n"
+    "cbuffer ThemeConstants : register(b1) {\n"
+    "    float4 theme_bg;\n"
+    "    float4 theme_panel;\n"
+    "    float4 theme_border;\n"
+    "    float4 theme_text_main;\n"
+    "    float4 theme_text_muted;\n"
+    "    float4 theme_accent;\n"
+    "    float4 theme_scrollbar;\n"
+    "};\n"
     "struct VS_INPUT {\n"
     "    uint vertex_id : SV_VertexID;\n"
     "    float2 pos     : INST_POS;\n"
     "    float2 size    : INST_SIZE;\n"
     "    int    tex_idx : INST_TEX;\n"
     "    float  opacity : INST_OPACITY;\n"
+    "    float  radius  : INST_RADIUS;\n"
     "};\n"
     "struct PS_INPUT {\n"
     "    float4 pos     : SV_POSITION;\n"
     "    float2 uv      : TEXCOORD;\n"
     "    int    tex_idx : TEX_INDEX;\n"
     "    float  opacity : OPACITY;\n"
+    "    float2 size    : SIZE;\n"
+    "    float  radius  : RADIUS;\n"
     "};\n"
     "PS_INPUT vs_main(VS_INPUT input) {\n"
     "    PS_INPUT output;\n"
@@ -37,46 +50,77 @@ static const char* shader_src =
     "    output.uv = uv;\n"
     "    output.tex_idx = input.tex_idx;\n"
     "    output.opacity = input.opacity;\n"
+    "    output.size = input.size;\n"
+    "    output.radius = input.radius;\n"
     "    return output;\n"
     "}\n"
     "Texture2DArray textures : register(t0);\n"
     "Texture2D full_texture : register(t1);\n"
     "SamplerState samp : register(s0);\n"
+    "float rounded_rect_sdf(float2 p, float2 size, float radius) {\n"
+    "    float2 half_size = size * 0.5;\n"
+    "    float2 d = abs(p - half_size) - half_size + radius;\n"
+    "    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - radius;\n"
+    "}\n"
     "float4 ps_main(PS_INPUT input) : SV_TARGET {\n"
-    "    if (input.tex_idx == -2) return float4(1.0, 1.0, 1.0, input.opacity);\n"
-    "    if (input.tex_idx == -3) return float4(0.2, 0.2, 0.2, input.opacity);\n"
-    "    if (input.tex_idx == -4) return float4(0.5, 0.5, 0.5, input.opacity);\n"
-    "    if (input.tex_idx == -5) {\n"
-    "        float4 color = full_texture.Sample(samp, input.uv);\n"
-    "        return float4(color.rgb, input.opacity);\n"
-    "    }\n"
-    "    if (input.tex_idx < 0) return float4(0.12, 0.12, 0.12, input.opacity);\n"
-    "    float4 color = textures.Sample(samp, float3(input.uv, input.tex_idx));\n"
-    "    return float4(color.rgb, input.opacity);\n"
+    "    float2 pixel_pos = input.uv * input.size;\n"
+    "    float d = rounded_rect_sdf(pixel_pos, input.size, input.radius);\n"
+    "    float alpha = (input.tex_idx == -6) ? clamp(1.0 - (d / 12.0), 0.0, 1.0) * 0.35 : clamp(0.5 - d, 0.0, 1.0);\n"
+    "    if (alpha <= 0.0) discard;\n"
+    "    float4 color;\n"
+    "    if (input.tex_idx == -2) color = theme_border;\n"
+    "    else if (input.tex_idx == -3) color = theme_panel;\n"
+    "    else if (input.tex_idx == -4) color = theme_scrollbar;\n"
+    "    else if (input.tex_idx == -5) color = full_texture.Sample(samp, input.uv);\n"
+    "    else if (input.tex_idx == -6) color = float4(0.0, 0.0, 0.0, 1.0);\n"
+    "    else if (input.tex_idx == -7) color = theme_accent;\n"
+    "    else if (input.tex_idx < 0) color = theme_panel;\n"
+    "    else color = textures.Sample(samp, float3(input.uv, input.tex_idx));\n"
+    "    color.a *= input.opacity * alpha;\n"
+    "    color.rgb *= color.a;\n"
+    "    return color;\n"
     "}\n";
 
 int r_init(AppState *s)
 {
-    DXGI_SWAP_CHAIN_DESC scd = {0};
-    scd.BufferCount = 2;
-    scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    scd.OutputWindow = s->hwnd;
-    scd.SampleDesc.Count = 1;
-    scd.Windowed = TRUE;
-    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #ifdef _DEBUG
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
     D3D_FEATURE_LEVEL feature_level;
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags,
-        NULL, 0, D3D11_SDK_VERSION, &scd, &s->swap_chain, &s->d3d_device, &feature_level, &s->d3d_context);
+    HRESULT hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags,
+        NULL, 0, D3D11_SDK_VERSION, &s->d3d_device, &feature_level, &s->d3d_context);
     if (FAILED(hr)) return 0;
 
+    IDXGIDevice2* dxgi_device;
+    if (SUCCEEDED(s->d3d_device->lpVtbl->QueryInterface(s->d3d_device, &IID_IDXGIDevice2, (void**)&dxgi_device))) {
+        IDXGIAdapter* dxgi_adapter;
+        if (SUCCEEDED(dxgi_device->lpVtbl->GetParent(dxgi_device, &IID_IDXGIAdapter, (void**)&dxgi_adapter))) {
+            IDXGIFactory2* dxgi_factory;
+            if (SUCCEEDED(dxgi_adapter->lpVtbl->GetParent(dxgi_adapter, &IID_IDXGIFactory2, (void**)&dxgi_factory))) {
+                DXGI_SWAP_CHAIN_DESC1 scd1 = {0};
+                scd1.Width = 0;
+                scd1.Height = 0;
+                scd1.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                scd1.SampleDesc.Count = 1;
+                scd1.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+                scd1.BufferCount = 2;
+                scd1.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+                scd1.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 
+                IDXGISwapChain1* sc1;
+                if (SUCCEEDED(dxgi_factory->lpVtbl->CreateSwapChainForHwnd(dxgi_factory, (IUnknown*)s->d3d_device, s->hwnd, &scd1, NULL, NULL, &sc1))) {
+                    sc1->lpVtbl->QueryInterface(sc1, &IID_IDXGISwapChain, (void**)&s->swap_chain);
+                    sc1->lpVtbl->Release(sc1);
+                }
+                dxgi_factory->lpVtbl->Release(dxgi_factory);
+            }
+            dxgi_adapter->lpVtbl->Release(dxgi_adapter);
+        }
+        dxgi_device->lpVtbl->Release(dxgi_device);
+    }
+    if (!s->swap_chain) return 0;
 
     ID3DBlob* vs_blob = NULL;
     ID3DBlob* ps_blob = NULL;
@@ -94,8 +138,9 @@ int r_init(AppState *s)
         { "INST_SIZE", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(InstanceData, w), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
         { "INST_TEX", 0, DXGI_FORMAT_R32_SINT, 0, offsetof(InstanceData, tex_index), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
         { "INST_OPACITY", 0, DXGI_FORMAT_R32_FLOAT, 0, offsetof(InstanceData, opacity), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+        { "INST_RADIUS", 0, DXGI_FORMAT_R32_FLOAT, 0, offsetof(InstanceData, corner_radius), D3D11_INPUT_PER_INSTANCE_DATA, 1 },
     };
-    s->d3d_device->lpVtbl->CreateInputLayout(s->d3d_device, ied, 4, vs_blob->lpVtbl->GetBufferPointer(vs_blob), vs_blob->lpVtbl->GetBufferSize(vs_blob), &s->input_layout);
+    s->d3d_device->lpVtbl->CreateInputLayout(s->d3d_device, ied, 5, vs_blob->lpVtbl->GetBufferPointer(vs_blob), vs_blob->lpVtbl->GetBufferSize(vs_blob), &s->input_layout);
     
     vs_blob->lpVtbl->Release(vs_blob);
     ps_blob->lpVtbl->Release(ps_blob);
@@ -111,6 +156,10 @@ int r_init(AppState *s)
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     s->d3d_device->lpVtbl->CreateBuffer(s->d3d_device, &bd, NULL, &s->constant_buffer);
 
+    bd.ByteWidth = sizeof(Theme);
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    s->d3d_device->lpVtbl->CreateBuffer(s->d3d_device, &bd, NULL, &s->theme_buffer);
+
     D3D11_SAMPLER_DESC sd = {0};
     sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -120,7 +169,7 @@ int r_init(AppState *s)
 
     D3D11_BLEND_DESC bld = {0};
     bld.RenderTarget[0].BlendEnable = TRUE;
-    bld.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    bld.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
     bld.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
     bld.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
     bld.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
@@ -161,8 +210,19 @@ int r_init(AppState *s)
 
     if (s->dwrite_factory) {
         s->dwrite_factory->lpVtbl->CreateTextFormat(
-            s->dwrite_factory, L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
-            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format);
+            s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
+            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_regular);
+            
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, 
+            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_semibold);
+            
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
+            DWRITE_FONT_STRETCH_NORMAL, 18.0f, L"en-US", &s->dwrite_format_icons);
+            
+        // Default mapping to keep old code happy
+        s->dwrite_format = s->dwrite_format_regular;
     }
 
     r_resize(s);
@@ -225,9 +285,9 @@ void r_resize(AppState *s)
 
 void r_clear(AppState *s, float r, float g, float b)
 {
+    (void)r; (void)g; (void)b;
     if (!s->rtv) return;
-    float color[4] = {r, g, b, 1.0f};
-    s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, color);
+    s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, s->theme.bg);
 }
 
 void r_present(AppState *s)
@@ -309,6 +369,7 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->VSSetShader(s->d3d_context, s->vs, NULL, 0);
     s->d3d_context->lpVtbl->VSSetConstantBuffers(s->d3d_context, 0, 1, &s->constant_buffer);
     s->d3d_context->lpVtbl->PSSetShader(s->d3d_context, s->ps, NULL, 0);
+    s->d3d_context->lpVtbl->PSSetConstantBuffers(s->d3d_context, 1, 1, &s->theme_buffer);
     s->d3d_context->lpVtbl->PSSetSamplers(s->d3d_context, 0, 1, &s->sampler);
 
     ID3D11ShaderResourceView* srvs[2] = { s->tex_pool.texture_array_srv, s->active_full_srv };
@@ -317,16 +378,27 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->DrawInstanced(s->d3d_context, 4, count, 0, 0);
 }
 
-void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h)
+void r_draw_text_ext(AppState *s, const wchar_t* text, float x, float y, float w, float h, struct IDWriteTextFormat* format, float color[4])
 {
-    if (!s->d2d_rtv || !s->dwrite_format || !s->d2d_brush) return;
+    if (!s->d2d_rtv || !format) return;
+    
+    ID2D1SolidColorBrush* brush = NULL;
+    D2D1_COLOR_F c = { color[0], color[1], color[2], color[3] };
+    s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &c, NULL, &brush);
+    if (!brush) return;
 
     D2D1_RECT_F layoutRect = { x, y, x + w, y + h };
     s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
-    
-    ID2D1RenderTarget_DrawText(s->d2d_rtv, text, (UINT32)wcslen(text), s->dwrite_format, &layoutRect, (ID2D1Brush*)s->d2d_brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
-
+    ID2D1RenderTarget_DrawText(s->d2d_rtv, text, (UINT32)wcslen(text), format, &layoutRect, (ID2D1Brush*)brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
     s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
+
+    ((IUnknown*)brush)->lpVtbl->Release((IUnknown*)brush);
+}
+
+void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h)
+{
+    float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    r_draw_text_ext(s, text, x, y, w, h, s->dwrite_format, white);
 }
 
 void r_shutdown(AppState *s)
@@ -342,6 +414,7 @@ void r_shutdown(AppState *s)
     if (s->blend_state) s->blend_state->lpVtbl->Release(s->blend_state);
     if (s->instance_buffer) s->instance_buffer->lpVtbl->Release(s->instance_buffer);
     if (s->constant_buffer) s->constant_buffer->lpVtbl->Release(s->constant_buffer);
+    if (s->theme_buffer) s->theme_buffer->lpVtbl->Release(s->theme_buffer);
     if (s->input_layout) s->input_layout->lpVtbl->Release(s->input_layout);
     if (s->vs) s->vs->lpVtbl->Release(s->vs);
     if (s->ps) s->ps->lpVtbl->Release(s->ps);
@@ -349,7 +422,9 @@ void r_shutdown(AppState *s)
     if (s->swap_chain) s->swap_chain->lpVtbl->Release(s->swap_chain);
     if (s->d3d_context) s->d3d_context->lpVtbl->Release(s->d3d_context);
     if (s->d2d_brush) ((IUnknown*)s->d2d_brush)->lpVtbl->Release((IUnknown*)s->d2d_brush);
-    if (s->dwrite_format) ((IUnknown*)s->dwrite_format)->lpVtbl->Release((IUnknown*)s->dwrite_format);
+    if (s->dwrite_format_regular) ((IUnknown*)s->dwrite_format_regular)->lpVtbl->Release((IUnknown*)s->dwrite_format_regular);
+    if (s->dwrite_format_semibold) ((IUnknown*)s->dwrite_format_semibold)->lpVtbl->Release((IUnknown*)s->dwrite_format_semibold);
+    if (s->dwrite_format_icons) ((IUnknown*)s->dwrite_format_icons)->lpVtbl->Release((IUnknown*)s->dwrite_format_icons);
     if (s->dwrite_factory) ((IUnknown*)s->dwrite_factory)->lpVtbl->Release((IUnknown*)s->dwrite_factory);
     if (s->d2d_rtv) ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv);
     if (s->d2d_factory) ((IUnknown*)s->d2d_factory)->lpVtbl->Release((IUnknown*)s->d2d_factory);

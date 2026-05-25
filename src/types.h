@@ -208,6 +208,26 @@ typedef struct {
 #define MAX_GPU_TEXTURES 1024
 
 typedef struct {
+    float bg[4];
+    float panel[4];
+    float border[4];
+    float text_main[4];
+    float text_muted[4];
+    float accent[4];
+    float scrollbar[4];
+} Theme;
+
+typedef struct {
+    float grid_gap;
+    float panel_padding;
+    float thumb_radius;
+    float card_radius;
+    float button_height;
+    float topbar_height;
+    float scrollbar_w;
+} ScaledLayout;
+
+typedef struct {
     ID3D11Texture2D*          texture_array;
     ID3D11ShaderResourceView* texture_array_srv;
     int                       last_used[MAX_GPU_TEXTURES];
@@ -238,6 +258,14 @@ typedef struct AppState {
     int         window_height;
     int         needs_redraw;
     HWND        hwnd;
+    
+    // UI & Layout
+    Theme       theme;
+    ScaledLayout layout;
+    float       dpi_scale;
+    float       scrollbar_opacity;
+    float       scrollbar_fade_timer;
+    float       scrollbar_hover_t;
 
     // D3D11 Resources
     ID3D11Device*           d3d_device;
@@ -250,6 +278,9 @@ typedef struct AppState {
     struct ID2D1RenderTarget*      d2d_rtv;
     struct IDWriteFactory*         dwrite_factory;
     struct IDWriteTextFormat*      dwrite_format;
+    struct IDWriteTextFormat*      dwrite_format_semibold;
+    struct IDWriteTextFormat*      dwrite_format_regular;
+    struct IDWriteTextFormat*      dwrite_format_icons;
     struct ID2D1SolidColorBrush*   d2d_brush;
 
     ID3D11VertexShader*     vs;
@@ -259,6 +290,7 @@ typedef struct AppState {
     ID3D11SamplerState*     sampler;
     ID3D11BlendState*       blend_state;
     ID3D11Buffer*           constant_buffer;
+    ID3D11Buffer*           theme_buffer;
     
     GPUTexturePool          tex_pool;
 
@@ -361,6 +393,7 @@ int   gal_handle_fullimage_click(AppState *s, int x, int y);
 void  gal_apply_sort(AppState *s);
 void  gal_scroll(AppState *s, float delta);
 void  gal_update_layout(AppState *s);
+void  gal_update_layout_scales(AppState *s);
 void  gal_open_full(AppState *s, int index);
 void  gal_close_full(AppState *s);
 void  gal_select_full_image(AppState *s, int index);
@@ -374,6 +407,8 @@ typedef struct {
     float h;
     int   tex_index;
     float opacity;
+    float corner_radius;
+    float _pad;
 } InstanceData;
 
 int  r_init(AppState *s);

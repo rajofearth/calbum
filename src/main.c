@@ -18,6 +18,12 @@
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE_V2
 #define DWMWA_USE_IMMERSIVE_DARK_MODE_V2 19
 #endif
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+#ifndef DWMSBT_MAINWINDOW
+#define DWMSBT_MAINWINDOW 2
+#endif
 
 // Global state — single instance for the entire application
 static AppState g_state;
@@ -37,6 +43,36 @@ static int image_select_offset(AppState *s, int delta)
         s->needs_redraw = 1;
     }
     return 1;
+}
+
+static void theme_init(AppState *s)
+{
+    DWORD colorization;
+    BOOL opaque;
+    if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque))) {
+        s->theme.accent[0] = ((colorization >> 16) & 0xFF) / 255.0f;
+        s->theme.accent[1] = ((colorization >> 8) & 0xFF) / 255.0f;
+        s->theme.accent[2] = ((colorization >> 0) & 0xFF) / 255.0f;
+        s->theme.accent[3] = 1.0f;
+    } else {
+        s->theme.accent[0] = 0.0f; s->theme.accent[1] = 0.47f; s->theme.accent[2] = 0.83f; s->theme.accent[3] = 1.0f;
+    }
+
+    s->theme.bg[0] = 0.0f; s->theme.bg[1] = 0.0f; s->theme.bg[2] = 0.0f; s->theme.bg[3] = 0.05f;
+    s->theme.panel[0] = 0.12f; s->theme.panel[1] = 0.12f; s->theme.panel[2] = 0.12f; s->theme.panel[3] = 1.0f;
+    s->theme.border[0] = 0.2f; s->theme.border[1] = 0.2f; s->theme.border[2] = 0.2f; s->theme.border[3] = 1.0f;
+    
+    s->theme.text_main[0] = 1.0f; s->theme.text_main[1] = 1.0f; s->theme.text_main[2] = 1.0f; s->theme.text_main[3] = 1.0f;
+    s->theme.text_muted[0] = 0.6f; s->theme.text_muted[1] = 0.6f; s->theme.text_muted[2] = 0.6f; s->theme.text_muted[3] = 1.0f;
+    s->theme.scrollbar[0] = 1.0f; s->theme.scrollbar[1] = 1.0f; s->theme.scrollbar[2] = 1.0f; s->theme.scrollbar[3] = 0.3f;
+
+    if (s->d3d_context && s->theme_buffer) {
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if (SUCCEEDED(s->d3d_context->lpVtbl->Map(s->d3d_context, (ID3D11Resource*)s->theme_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+            memcpy(mapped.pData, &s->theme, sizeof(Theme));
+            s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource*)s->theme_buffer, 0);
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -99,6 +135,22 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
     switch (fc->type) {
     case CHANGE_ADDED: {
         // Append and let the next paint lazy-load the thumbnail
+        if (s->count >= s->capacity) {
+            int new_cap = s->capacity ? s->capacity * 2 : 256;
+            size_t sz   = new_cap * sizeof(ImageEntry);
+            size_t align = 16, mask = align - 1;
+            size_t off = (s->arena.offset + mask) & ~mask;
+            if (off + sz <= s->arena.capacity) {
+                ImageEntry *old_images = s->images;
+                s->images = (ImageEntry *)(s->arena.buf + off);
+                s->arena.offset = off + sz;
+                if (old_images && s->count > 0) {
+                    memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
+                }
+                s->capacity = new_cap;
+            }
+        }
+
         if (s->count < s->capacity) {
             size_t full_sz = (wcslen(fc->path) + 1) * sizeof(wchar_t);
             size_t name_sz = (wcslen(fc->filename) + 1) * sizeof(wchar_t);
@@ -127,6 +179,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 e->full_height = 0;
                 s->count++;
                 gal_apply_sort(s);
+                gal_update_layout(s);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
             }
@@ -144,6 +197,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 if (remaining > 0)
                     memmove(&s->images[i], &s->images[i+1], remaining * sizeof(ImageEntry));
                 s->count--;
+                gal_update_layout(s);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
@@ -402,6 +456,21 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     case WM_CALBUM_LOAD_COMPLETE: on_thumb_complete(hwnd, wParam, lParam); return 0;
     case WM_CALBUM_FILE_CHANGE:   on_file_changed(hwnd, wParam, lParam); return 0;
 
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+        theme_init(&g_state);
+        g_state.needs_redraw = 1;
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+
+    case WM_DPICHANGED: {
+        g_state.dpi_scale = HIWORD(wParam) / 96.0f;
+        gal_update_layout_scales(&g_state);
+        gal_update_layout(&g_state);
+        RECT* r = (RECT*)lParam;
+        SetWindowPos(hwnd, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mmi = (MINMAXINFO *)lParam;
         mmi->ptMinTrackSize.x = MIN_WINDOW_WIDTH;
@@ -445,18 +514,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         1200, 800, NULL, NULL, hInstance, NULL);
     if (!g_state.hwnd) return 1;
 
-    // Apply immersive dark mode to title bar
+    // Apply immersive dark mode to title bar and Mica backdrop
     BOOL dark_mode = TRUE;
     if (FAILED(DwmSetWindowAttribute(g_state.hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, sizeof(dark_mode)))) {
         DwmSetWindowAttribute(g_state.hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_V2, &dark_mode, sizeof(dark_mode));
     }
+    int backdrop_type = DWMSBT_MAINWINDOW;
+    DwmSetWindowAttribute(g_state.hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop_type, sizeof(backdrop_type));
+    
+    MARGINS margins = {-1, -1, -1, -1};
+    DwmExtendFrameIntoClientArea(g_state.hwnd, &margins);
+
+    UINT dpi = GetDpiForWindow(g_state.hwnd);
+    g_state.dpi_scale = dpi / 96.0f;
+    gal_update_layout_scales(&g_state);
 
     ShowWindow(g_state.hwnd, nCmdShow);
     UpdateWindow(g_state.hwnd);
 
     // Init WIC and D3D11
     il_init_wic();
-    r_init(&g_state);
+    if (!r_init(&g_state)) {
+        MessageBoxW(NULL, L"Failed to initialize the D3D11 rendering engine. Please check your graphics driver or system compatibility.", L"calbum — Rendering Init Failure", MB_OK | MB_ICONERROR);
+        il_shutdown_wic();
+        app_shutdown(&g_state);
+        return 1;
+    }
+    theme_init(&g_state);
 
     // Start worker threads
     aw_start_workers(&g_state);

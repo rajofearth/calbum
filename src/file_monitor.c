@@ -86,7 +86,7 @@ int fm_start_monitor(AppState *s, const wchar_t *directory)
     s->dir_handle = CreateFileW(directory, FILE_LIST_DIRECTORY,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                 NULL, OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+                                FILE_FLAG_BACKUP_SEMANTICS,
                                 NULL);
     if (s->dir_handle == INVALID_HANDLE_VALUE) {
         s->dir_handle = NULL;
