@@ -3,6 +3,8 @@
 // =========================================================================
 #include "types.h"
 #include "ui.h"
+#include "layout.h"
+#include "utils.h"
 #include <math.h>
 
 void gal_update_layout_scales(AppState *s)
@@ -16,64 +18,6 @@ void gal_update_layout_scales(AppState *s)
     s->layout.button_height = 32.0f * s->dpi_scale;
     s->layout.topbar_height = 50.0f * s->dpi_scale;
     s->layout.scrollbar_w = 6.0f * s->dpi_scale;
-}
-
-typedef struct {
-    int cols;
-    int pad;
-    int grid_width;
-    int left_margin;
-    int scroll_int;
-    int first_row;
-    int last_row;
-    int first_visible;
-    int last_visible;
-} GridLayout;
-
-static void gal_calc_layout(AppState *s, GridLayout *out)
-{
-    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
-    float thumb_size = 160.0f * dpi;
-    float thumb_padding = s->layout.grid_gap > 0.0f ? s->layout.grid_gap : 8.0f * dpi;
-    float gallery_padding = s->layout.panel_padding > 0.0f ? s->layout.panel_padding : 16.0f * dpi;
-    
-    out->pad = (int)(thumb_size + thumb_padding);
-    if (out->pad < 1) out->pad = 1;
-    
-    out->cols = (int)((s->window_width - gallery_padding) / out->pad);
-    if (out->cols < 1) out->cols = 1;
-    
-    out->grid_width = (int)(out->cols * thumb_size + (out->cols - 1) * thumb_padding);
-    out->left_margin = (s->window_width - out->grid_width) / 2;
-    if (out->left_margin < (int)gallery_padding) out->left_margin = (int)gallery_padding;
-    
-    out->scroll_int = (int)s->scroll_current_y;
-    float top_margin_h = s->layout.topbar_height > 0.0f ? s->layout.topbar_height : 0.0f;
-    int top_margin = (int)(top_margin_h + gallery_padding);
-    out->first_row = (out->scroll_int - top_margin) / out->pad;
-    if (out->first_row < 0) out->first_row = 0;
-    
-    out->last_row = (out->scroll_int + s->window_height - top_margin) / out->pad + 1;
-    
-    out->first_visible = out->first_row * out->cols;
-    out->last_visible = (out->last_row + 1) * out->cols;
-    if (out->last_visible > s->count) out->last_visible = s->count;
-}
-
-static int gal_max_scroll(AppState *s)
-{
-    GridLayout lay;
-    gal_calc_layout(s, &lay);
-    if (lay.cols <= 0) return 0;
-    
-    int total_rows = ceil_div(s->count, lay.cols);
-    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
-    float gallery_padding = s->layout.panel_padding > 0.0f ? s->layout.panel_padding : 16.0f * dpi;
-    float top_margin_h = s->layout.topbar_height > 0.0f ? s->layout.topbar_height : 0.0f;
-    int top_margin = (int)(top_margin_h + gallery_padding);
-    int content_h = top_margin + total_rows * lay.pad + (int)gallery_padding;
-    int max_s = content_h - s->window_height;
-    return max_s < 0 ? 0 : max_s;
 }
 
 static int cmp_date_created(const void *a, const void *b) {
@@ -212,29 +156,6 @@ void gal_scroll(AppState *s, float delta)
     s->needs_redraw = 1;
 }
 
-int gal_hit_test(AppState *s, int x, int y, int *out_index)
-{
-    if (s->view_mode != VIEW_GALLERY || s->count == 0) return 0;
-    if (s->sort_menu_open) return 0; // Don't allow clicking thumbnails when menu is open
-    GridLayout lay;
-    gal_calc_layout(s, &lay);
-
-    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
-    float thumb_size = 160.0f * dpi;
-    float gallery_padding = s->layout.panel_padding > 0.0f ? s->layout.panel_padding : 16.0f * dpi;
-    float top_margin_h = s->layout.topbar_height > 0.0f ? s->layout.topbar_height : 0.0f;
-
-    for (int i = lay.first_visible; i < lay.last_visible; i++) {
-        int row = i / lay.cols, col = i % lay.cols;
-        int ix = lay.left_margin + col * lay.pad;
-        int iy = (int)(top_margin_h + gallery_padding + row * lay.pad - lay.scroll_int);
-        if (x >= ix && x < ix + thumb_size && y >= iy && y < iy + thumb_size) {
-            *out_index = i; return 1;
-        }
-    }
-    return 0;
-}
-
 void gal_select_full_image(AppState *s, int index)
 {
     if (index < 0 || index >= s->count) return;
@@ -274,7 +195,6 @@ void gal_open_full(AppState *s, int index)
     s->view_mode = VIEW_FULLIMAGE;
     gal_select_full_image(s, index);
 }
-
 
 void gal_render_gallery(HDC hdc, AppState *s)
 {
@@ -319,7 +239,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].y = y - 4.0f * s->dpi_scale;
             instances[inst_count].w = thumb_size + 8.0f * s->dpi_scale;
             instances[inst_count].h = thumb_size + 8.0f * s->dpi_scale;
-            instances[inst_count].tex_index = -7; // Accent color token (-7)
+            instances[inst_count].tex_index = TOKEN_ACCENT; // Accent color token
             instances[inst_count].opacity = 1.0f;
             instances[inst_count].corner_radius = s->layout.thumb_radius + 4.0f * s->dpi_scale;
             inst_count++;
@@ -331,7 +251,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].y = y - 2.0f * s->dpi_scale;
             instances[inst_count].w = thumb_size + 4.0f * s->dpi_scale;
             instances[inst_count].h = thumb_size + 4.0f * s->dpi_scale;
-            instances[inst_count].tex_index = -2; // White border
+            instances[inst_count].tex_index = TOKEN_BORDER; // White border
             instances[inst_count].opacity = 0.35f;
             instances[inst_count].corner_radius = s->layout.thumb_radius + 2.0f * s->dpi_scale;
             inst_count++;
@@ -343,7 +263,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
         instances[inst_count].y = y;
         instances[inst_count].w = thumb_size;
         instances[inst_count].h = thumb_size;
-        instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : -1;
+        instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : TOKEN_DEFAULT;
         instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.85f;
         instances[inst_count].corner_radius = s->layout.thumb_radius;
         
@@ -389,7 +309,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].y = track_y;
             instances[inst_count].w = track_w;
             instances[inst_count].h = track_h;
-            instances[inst_count].tex_index = -3;
+            instances[inst_count].tex_index = TOKEN_PANEL;
             instances[inst_count].opacity = 0.15f * s->scrollbar_opacity;
             instances[inst_count].corner_radius = track_w * 0.5f;
             inst_count++;
@@ -403,7 +323,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].y = thumb_y;
             instances[inst_count].w = track_w;
             instances[inst_count].h = thumb_h;
-            instances[inst_count].tex_index = -4;
+            instances[inst_count].tex_index = TOKEN_SCROLLBAR;
             instances[inst_count].opacity = s->scrollbar_opacity * (scrollbar_hovered ? 1.0f : 0.7f);
             instances[inst_count].corner_radius = track_w * 0.5f;
             inst_count++;
@@ -452,37 +372,6 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
     r_present(s);
     s->needs_redraw = 0;
-}
-
-static void format_size(uint64_t bytes, wchar_t *buf, int len)
-{
-    if (bytes >= 1024ULL * 1024 * 1024) {
-        swprintf(buf, len, L"%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
-    } else if (bytes >= 1024ULL * 1024) {
-        swprintf(buf, len, L"%.2f MB", (double)bytes / (1024.0 * 1024.0));
-    } else if (bytes >= 1024) {
-        swprintf(buf, len, L"%.2f KB", (double)bytes / 1024.0);
-    } else {
-        swprintf(buf, len, L"%llu Bytes", bytes);
-    }
-}
-
-static void format_filetime(uint64_t filetime, wchar_t *buf, int len)
-{
-    FILETIME ft;
-    ft.dwHighDateTime = (DWORD)(filetime >> 32);
-    ft.dwLowDateTime = (DWORD)(filetime & 0xFFFFFFFF);
-    
-    SYSTEMTIME stUTC, stLocal;
-    if (FileTimeToSystemTime(&ft, &stUTC)) {
-        if (SystemTimeToTzSpecificLocalTime(NULL, &stUTC, &stLocal)) {
-            swprintf(buf, len, L"%04d-%02d-%02d %02d:%02d:%02d",
-                     stLocal.wYear, stLocal.wMonth, stLocal.wDay,
-                     stLocal.wHour, stLocal.wMinute, stLocal.wSecond);
-            return;
-        }
-    }
-    wcscpy(buf, L"Unknown");
 }
 
 void gal_close_full(AppState *s)
@@ -534,7 +423,6 @@ void gal_render_fullimage(HDC hdc, AppState *s)
                     break;
                 }
             }
-
         }
     }
 
@@ -565,7 +453,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].y = display_y;
             instances[inst_count].w = display_w;
             instances[inst_count].h = display_h;
-            instances[inst_count].tex_index = -5; // Samples from register(t1)
+            instances[inst_count].tex_index = TOKEN_FULL_IMAGE; // Samples from register(t1)
             instances[inst_count].opacity = 1.0f;
             instances[inst_count].corner_radius = 4.0f * s->dpi_scale;
             inst_count++;
@@ -585,7 +473,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     instances[inst_count].y = 0.0f;
     instances[inst_count].w = (float)s->window_width;
     instances[inst_count].h = s->layout.topbar_height + 20.0f * s->dpi_scale;
-    instances[inst_count].tex_index = -3; // Solid dark gray backplate
+    instances[inst_count].tex_index = TOKEN_PANEL; // Solid dark gray backplate
     instances[inst_count].opacity = 1.0f;
     inst_count++;
 
@@ -616,7 +504,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     instances[inst_count].y = strip_y;
     instances[inst_count].w = (float)s->window_width;
     instances[inst_count].h = 130.0f * s->dpi_scale;
-    instances[inst_count].tex_index = -3; // Gray backplate
+    instances[inst_count].tex_index = TOKEN_PANEL; // Gray backplate
     instances[inst_count].opacity = 1.0f;  // Fully solid
     inst_count++;
 
@@ -667,7 +555,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].y = ty - 4.0f * s->dpi_scale;
             instances[inst_count].w = (float)(thumb_w + 8.0f * s->dpi_scale);
             instances[inst_count].h = (float)(thumb_h + 8.0f * s->dpi_scale);
-            instances[inst_count].tex_index = -7; // Accent border
+            instances[inst_count].tex_index = TOKEN_ACCENT; // Accent border
             instances[inst_count].opacity = 1.0f;
             instances[inst_count].corner_radius = 8.0f * s->dpi_scale;
             inst_count++;
@@ -710,9 +598,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     r_draw_instances(s, instances, inst_count);
 
     // Draw Back and Info Button text
-    float btn_icon_size = 14.0f * s->dpi_scale;
-    r_draw_text_ext(s, L"\uE72B", 20.0f * s->dpi_scale + (80.0f * s->dpi_scale - btn_icon_size)/2.0f, 20.0f * s->dpi_scale + (30.0f * s->dpi_scale - btn_icon_size)/2.0f, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale, s->dwrite_format_icons, s->theme.text_main);
-    r_draw_text_ext(s, L"\uE946", info_btn_x + (80.0f * s->dpi_scale - btn_icon_size)/2.0f, 20.0f * s->dpi_scale + (30.0f * s->dpi_scale - btn_icon_size)/2.0f, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale, s->dwrite_format_icons, s->theme.text_main);
+    r_draw_text_aligned(s, L"\uE72B", 20.0f * s->dpi_scale, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
+    r_draw_text_aligned(s, L"\uE946", info_btn_x, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
 
     // Draw Zoom Level badge text if active
     if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f) {
@@ -735,9 +622,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     }
 
     // Draw previous/next strip buttons
-    float strip_icon_size = 12.0f * s->dpi_scale;
-    r_draw_text_ext(s, L"\uE76B", 20.0f * s->dpi_scale + (30.0f * s->dpi_scale - strip_icon_size)/2.0f, strip_y + 35.0f * s->dpi_scale + (30.0f * s->dpi_scale - strip_icon_size)/2.0f, 30.0f * s->dpi_scale, 30.0f * s->dpi_scale, s->dwrite_format_icons, s->theme.text_main);
-    r_draw_text_ext(s, L"\uE76C", (float)s->window_width - 50.0f * s->dpi_scale + (30.0f * s->dpi_scale - strip_icon_size)/2.0f, strip_y + 35.0f * s->dpi_scale + (30.0f * s->dpi_scale - strip_icon_size)/2.0f, 30.0f * s->dpi_scale, 30.0f * s->dpi_scale, s->dwrite_format_icons, s->theme.text_main);
+    r_draw_text_aligned(s, L"\uE76B", 20.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale, 30.0f * s->dpi_scale, 30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
+    r_draw_text_aligned(s, L"\uE76C", (float)s->window_width - 50.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale, 30.0f * s->dpi_scale, 30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
 
     // Draw Metadata Card details
     if (s->info_open) {
@@ -795,33 +681,32 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         float close_h = 20.0f * s->dpi_scale;
         float close_x = info_x + info_w - close_w - 10.0f * s->dpi_scale;
         float close_y = info_y + 10.0f * s->dpi_scale;
-        float close_icon_size = 10.0f * s->dpi_scale;
-        r_draw_text_ext(s, L"\uE711", close_x + (close_w - close_icon_size)/2.0f, close_y + (close_h - close_icon_size)/2.0f, close_w, close_h, s->dwrite_format_icons, s->theme.text_main);
+        r_draw_text_aligned(s, L"\uE711", close_x, close_y, close_w, close_h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
 
         float pad = 15.0f * s->dpi_scale;
         float item_h = 24.0f * s->dpi_scale;
 
         // Render line items beautiful Segoe UI Variable text
-        r_draw_text_ext(s, L"IMAGE METADATA", info_x + pad, info_y + pad, info_w - pad * 2.0f, item_h, s->dwrite_format_semibold, s->theme.text_main);
+        r_draw_text_aligned(s, L"IMAGE METADATA", info_x + pad, info_y + pad, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
         
         wchar_t line[256];
         swprintf(line, 256, L"Name:  %ls", name_trunc);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 1.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 1.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
 
         swprintf(line, 256, L"Path:  %ls", path_trunc);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 2.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 2.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
 
         swprintf(line, 256, L"Size:  %ls", sz_buf);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 3.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 3.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
 
         swprintf(line, 256, L"Dims:  %ls", dim_buf);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 4.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 4.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
 
         swprintf(line, 256, L"Created:  %ls", tc_buf);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 5.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 5.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
 
         swprintf(line, 256, L"Modified: %ls", tm_buf);
-        r_draw_text_ext(s, line, info_x + pad, info_y + pad + item_h * 6.2f, info_w - pad * 2.0f, item_h, s->dwrite_format_regular, s->theme.text_main);
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 6.2f, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
     }
 
     r_present(s);
@@ -953,51 +838,4 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     }
 
     return closed_info;
-}
-
-void gal_clamp_zoom_pan(AppState *s)
-{
-    if (s->zoom_level <= 1.0f) {
-        s->zoom_level = 1.0f;
-        s->zoom_pan_x = 0.0f;
-        s->zoom_pan_y = 0.0f;
-        s->is_panning = 0;
-        return;
-    }
-    if (s->zoom_level > 8.0f) {
-        s->zoom_level = 8.0f;
-    }
-
-    float img_w = 0.0f, img_h = 0.0f;
-    if (s->count > 0 && s->selected_index >= 0 && s->selected_index < s->count) {
-        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, s->images[s->selected_index].path) : NULL;
-        if (slot && slot->texture) {
-            img_w = (float)slot->w;
-            img_h = (float)slot->h;
-        } else {
-            ImageEntry *e = s->images ? &s->images[s->selected_index] : NULL;
-            if (e) {
-                img_w = (float)e->full_width;
-                img_h = (float)e->full_height;
-            }
-        }
-    }
-    if (img_w <= 0.0f || img_h <= 0.0f) {
-        img_w = (float)s->window_width;
-        img_h = (float)s->window_height;
-    }
-
-    float main_w = (float)s->window_width - 40.0f * s->dpi_scale;
-    float main_h = (float)s->window_height - (s->layout.topbar_height + 160.0f * s->dpi_scale);
-    float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
-    float display_w = img_w * scale * s->zoom_level;
-    float display_h = img_h * scale * s->zoom_level;
-
-    float max_pan_x = (display_w > main_w) ? (display_w - main_w) / 2.0f : 0.0f;
-    float max_pan_y = (display_h > main_h) ? (display_h - main_h) / 2.0f : 0.0f;
-
-    if (s->zoom_pan_x < -max_pan_x) s->zoom_pan_x = -max_pan_x;
-    if (s->zoom_pan_x > max_pan_x) s->zoom_pan_x = max_pan_x;
-    if (s->zoom_pan_y < -max_pan_y) s->zoom_pan_y = -max_pan_y;
-    if (s->zoom_pan_y > max_pan_y) s->zoom_pan_y = max_pan_y;
 }

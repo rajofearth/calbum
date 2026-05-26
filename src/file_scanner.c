@@ -24,44 +24,11 @@ static int skip_dir(const wchar_t *name) {
 
 static int append_entry(AppState *s, const wchar_t *full, WIN32_FIND_DATAW *ffd)
 {
-    if (s->count >= s->capacity) {
-        int new_cap = s->capacity ? s->capacity * 2 : 256;
-        size_t sz   = new_cap * sizeof(ImageEntry);
-        size_t align = 16, mask = align - 1;
-        size_t off = (s->arena.offset + mask) & ~mask;
-        if (off + sz > s->arena.capacity) return 0;
-
-        ImageEntry *old_images = s->images;
-        s->images = (ImageEntry *)(s->arena.buf + off);
-        s->arena.offset = off + sz;
-        // Copy surviving entries into the new block so nothing is lost
-        if (old_images && s->count > 0)
-            memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
-        s->capacity = new_cap;
-    }
-
-    size_t full_sz = (wcslen(full) + 1) * sizeof(wchar_t);
-    size_t name_sz = (wcslen(ffd->cFileName) + 1) * sizeof(wchar_t);
-    wchar_t *p_full = (wchar_t *)arena_alloc(&s->arena, full_sz);
-    wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
-    if (!p_full || !p_name) return 0;
-
-    wcscpy(p_full, full);
-    wcscpy(p_name, ffd->cFileName);
-
-    ImageEntry *e = &s->images[s->count];
-    e->path = p_full;
-    e->filename = p_name;
-    e->file_size = ((uint64_t)ffd->nFileSizeHigh << 32) | ffd->nFileSizeLow;
-    e->last_modified = ((uint64_t)ffd->ftLastWriteTime.dwHighDateTime << 32) | ffd->ftLastWriteTime.dwLowDateTime;
-    e->created_time = ((uint64_t)ffd->ftCreationTime.dwHighDateTime << 32) | ffd->ftCreationTime.dwLowDateTime;
-    e->texture_slot = -1;
-    e->state = IMG_STATE_NEW;
-    e->thumb_requested = 0;
-    e->full_width = 0;
-    e->full_height = 0;
-    s->count++;
-    return 1;
+    uint64_t file_size = ((uint64_t)ffd->nFileSizeHigh << 32) | ffd->nFileSizeLow;
+    uint64_t last_modified = ((uint64_t)ffd->ftLastWriteTime.dwHighDateTime << 32) | ffd->ftLastWriteTime.dwLowDateTime;
+    uint64_t created_time = ((uint64_t)ffd->ftCreationTime.dwHighDateTime << 32) | ffd->ftCreationTime.dwLowDateTime;
+    ImageEntry *e = app_append_image_entry(s, full, ffd->cFileName, file_size, last_modified, created_time);
+    return e != NULL;
 }
 
 static void scan_recursive(const wchar_t *dir, AppState *s)

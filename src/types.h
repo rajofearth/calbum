@@ -34,10 +34,49 @@
 typedef enum { VIEW_GALLERY, VIEW_FULLIMAGE } ViewMode;
 
 typedef enum {
+    ALIGN_X_LEFT = 0,
+    ALIGN_X_RIGHT = 1,
+    ALIGN_X_CENTER = 2,
+    ALIGN_X_JUSTIFIED = 3
+} TextAlignmentX;
+
+typedef enum {
+    ALIGN_Y_TOP = 0,
+    ALIGN_Y_BOTTOM = 1,
+    ALIGN_Y_CENTER = 2
+} TextAlignmentY;
+
+typedef enum {
     SORT_DATE_CREATED,
     SORT_DATE_MODIFIED,
     SORT_SIZE
 } SortMode;
+
+typedef enum {
+    TOKEN_DEFAULT = -1,
+    TOKEN_BORDER = -2,
+    TOKEN_PANEL = -3,
+    TOKEN_SCROLLBAR = -4,
+    TOKEN_FULL_IMAGE = -5,
+    TOKEN_DROP_SHADOW = -6,
+    TOKEN_ACCENT = -7
+} RenderToken;
+
+// -------------------------------------------------------------------------
+// Layout Structures
+// -------------------------------------------------------------------------
+typedef struct {
+    int cols;
+    int pad;
+    int grid_width;
+    int left_margin;
+    int scroll_int;
+    int first_row;
+    int last_row;
+    int first_visible;
+    int last_visible;
+} GridLayout;
+
 
 // -------------------------------------------------------------------------
 // Arena Bump Allocator — zero-fragmentation, O(1) alloc/free
@@ -321,11 +360,9 @@ typedef struct AppState {
     // Asset worker thread pool
     HANDLE      worker_threads[NUM_WORKERS];
     HANDLE      worker_stop_event;
-    CRITICAL_SECTION work_lock;
+    RingBuffer  work_queue;
     void       *ring_slots[RING_CAPACITY];
-    int         ring_head;
-    int         ring_tail;
-    HANDLE      ring_nonempty;
+
 
     // Current directory
     wchar_t     current_dir[MAX_PATH_LEN];
@@ -354,12 +391,22 @@ typedef struct AppState {
 // Every non-static function in any .c file must be declared here.
 // ─────────────────────────────────────────────────────────────────────
 
+// utils.c
+void  format_size(uint64_t bytes, wchar_t *buf, int len);
+void  format_filetime(uint64_t filetime, wchar_t *buf, int len);
+
+// layout.c
+void  gal_calc_layout(AppState *s, GridLayout *out);
+int   gal_max_scroll(AppState *s);
+
 // app.c
 void  app_init(AppState *s);
 void  app_shutdown(AppState *s);
 void  app_load_folder(AppState *s, const wchar_t *path);
 void  app_update_title(AppState *s);
 void  get_pictures_folder(wchar_t *buf, int len);
+ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size, uint64_t last_modified, uint64_t created_time);
+
 
 // file_scanner.c
 int   fs_scan_directory(const wchar_t *path, AppState *s);
@@ -421,6 +468,7 @@ void r_upload_texture(AppState *s, int slot, void *bc1_data);
 void r_evict_texture(AppState *s, int slot);
 void r_draw_instances(AppState *s, void *instances, int count);
 void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h);
+void r_draw_text_aligned(AppState *s, const wchar_t* text, float x, float y, float w, float h, int align_x, int align_y, struct IDWriteTextFormat* format, float color[4]);
 int  r_load_full_image(AppState *s, const wchar_t *path);
 void r_free_full_image(AppState *s);
 FullImageSlot* r_get_full_image_slot(AppState *s, const wchar_t *path);

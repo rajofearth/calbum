@@ -21,9 +21,11 @@
 
 // ── 3. Shared Types & Inline Utilities ──────────────────────────────────
 #include "src/types.h"
+#include "src/utils.c"
 
 // ── 4. Low-Level Subsystems ────────────────────────────────────────────
 #include "src/renderer.c"
+#include "src/layout.c"
 
 // ── 5. OS & Data Subsystems ────────────────────────────────────────────
 #include "src/file_scanner.c"

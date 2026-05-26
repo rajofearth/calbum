@@ -37,16 +37,10 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
     ensure_cache_dir();
 
     for (;;) {
-        LoadRequest *req = NULL;
-        EnterCriticalSection(&s->work_lock);
-        if (s->ring_head != s->ring_tail) {
-            req = (LoadRequest *)s->ring_slots[s->ring_head];
-            s->ring_head = (s->ring_head + 1) % RING_CAPACITY;
-        }
-        LeaveCriticalSection(&s->work_lock);
+        LoadRequest *req = (LoadRequest *)rb_try_pop(&s->work_queue);
 
         if (!req) {
-            HANDLE events[2] = { s->ring_nonempty, s->worker_stop_event };
+            HANDLE events[2] = { s->work_queue.nonempty, s->worker_stop_event };
             DWORD wait = WaitForMultipleObjects(2, events, FALSE, INFINITE);
             if (wait == WAIT_OBJECT_0 + 1) return 0; 
             continue;
@@ -106,7 +100,6 @@ int aw_start_workers(AppState *s)
     if (s->worker_threads[0]) return 1;
 
     s->worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
-    s->ring_head = s->ring_tail = 0;
 
     for (int i = 0; i < NUM_WORKERS; i++) {
         s->worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, s, 0, NULL);
@@ -119,7 +112,7 @@ void aw_stop_workers(AppState *s)
     if (!s->worker_threads[0]) return;
 
     if (s->worker_stop_event) SetEvent(s->worker_stop_event);
-    SetEvent(s->ring_nonempty);
+    SetEvent(s->work_queue.nonempty);
 
     for (int i = 0; i < NUM_WORKERS; i++) {
         if (s->worker_threads[i]) {
@@ -139,20 +132,9 @@ int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND 
     req->thumb_size  = thumb_size;
     req->target_hwnd = hwnd;
 
-    int ok = 0;
-    EnterCriticalSection(&s->work_lock);
-    int next = (s->ring_tail + 1) % RING_CAPACITY;
-    if (next != s->ring_head) {
-        s->ring_slots[s->ring_tail] = req;
-        s->ring_tail = next;
-        ok = 1;
+    if (rb_push(&s->work_queue, req)) {
+        return 1;
     }
-    LeaveCriticalSection(&s->work_lock);
-
-    if (ok) {
-        SetEvent(s->ring_nonempty);
-    } else {
-        free(req);
-    }
-    return ok;
+    free(req);
+    return 0;
 }

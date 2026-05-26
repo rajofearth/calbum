@@ -65,7 +65,7 @@ static const char* shader_src =
     "float4 ps_main(PS_INPUT input) : SV_TARGET {\n"
     "    float2 pixel_pos = input.uv * input.size;\n"
     "    float d = rounded_rect_sdf(pixel_pos, input.size, input.radius);\n"
-    "    float alpha = (input.tex_idx == -6) ? clamp(1.0 - (d / 12.0), 0.0, 1.0) * 0.35 : clamp(0.5 - d, 0.0, 1.0);\n"
+    "    float alpha = (input.tex_idx == -6) ? clamp(-d / 12.0, 0.0, 1.0) * 0.35 : clamp(0.5 - d, 0.0, 1.0);\n"
     "    if (alpha <= 0.0) discard;\n"
     "    float4 color;\n"
     "    if (input.tex_idx == -2) color = theme_border;\n"
@@ -302,7 +302,7 @@ void r_evict_texture(AppState *s, int slot)
 
     for (int i = 0; i < s->count; i++) {
         if (s->images[i].texture_slot == slot) {
-            s->images[i].texture_slot = -1;
+            s->images[i].texture_slot = TOKEN_DEFAULT;
             s->images[i].thumb_requested = 0;   // Reset request status
             s->images[i].state = IMG_STATE_READY; // Cached on disk
             break;
@@ -399,6 +399,39 @@ void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, fl
 {
     float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     r_draw_text_ext(s, text, x, y, w, h, s->dwrite_format, white);
+}
+
+void r_draw_text_aligned(AppState *s, const wchar_t* text, float x, float y, float w, float h, int align_x, int align_y, struct IDWriteTextFormat* format, float color[4])
+{
+    if (!s->d2d_rtv || !s->dwrite_factory || !format) return;
+
+    IDWriteTextLayout *layout = NULL;
+    HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(
+        s->dwrite_factory,
+        text,
+        (UINT32)wcslen(text),
+        format,
+        w,
+        h,
+        &layout
+    );
+
+    if (SUCCEEDED(hr) && layout) {
+        layout->lpVtbl->SetTextAlignment(layout, (DWRITE_TEXT_ALIGNMENT)align_x);
+        layout->lpVtbl->SetParagraphAlignment(layout, (DWRITE_PARAGRAPH_ALIGNMENT)align_y);
+
+        ID2D1SolidColorBrush* brush = NULL;
+        D2D1_COLOR_F c = { color[0], color[1], color[2], color[3] };
+        s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &c, NULL, &brush);
+        if (brush) {
+            s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+            D2D1_POINT_2F origin = { x, y };
+            s->d2d_rtv->lpVtbl->DrawTextLayout(s->d2d_rtv, origin, layout, (ID2D1Brush*)brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
+            s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
+            ((IUnknown*)brush)->lpVtbl->Release((IUnknown*)brush);
+        }
+        ((IUnknown*)layout)->lpVtbl->Release((IUnknown*)layout);
+    }
 }
 
 void r_shutdown(AppState *s)

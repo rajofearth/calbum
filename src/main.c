@@ -135,54 +135,20 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
     switch (fc->type) {
     case CHANGE_ADDED: {
         // Append and let the next paint lazy-load the thumbnail
-        if (s->count >= s->capacity) {
-            int new_cap = s->capacity ? s->capacity * 2 : 256;
-            size_t sz   = new_cap * sizeof(ImageEntry);
-            size_t align = 16, mask = align - 1;
-            size_t off = (s->arena.offset + mask) & ~mask;
-            if (off + sz <= s->arena.capacity) {
-                ImageEntry *old_images = s->images;
-                s->images = (ImageEntry *)(s->arena.buf + off);
-                s->arena.offset = off + sz;
-                if (old_images && s->count > 0) {
-                    memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
-                }
-                s->capacity = new_cap;
-            }
+        uint64_t file_size = 0, last_modified = 0, created_time = 0;
+        WIN32_FILE_ATTRIBUTE_DATA wfad;
+        if (GetFileAttributesExW(fc->path, GetFileExInfoStandard, &wfad)) {
+            file_size = ((uint64_t)wfad.nFileSizeHigh << 32) | wfad.nFileSizeLow;
+            last_modified = ((uint64_t)wfad.ftLastWriteTime.dwHighDateTime << 32) | wfad.ftLastWriteTime.dwLowDateTime;
+            created_time = ((uint64_t)wfad.ftCreationTime.dwHighDateTime << 32) | wfad.ftCreationTime.dwLowDateTime;
         }
 
-        if (s->count < s->capacity) {
-            size_t full_sz = (wcslen(fc->path) + 1) * sizeof(wchar_t);
-            size_t name_sz = (wcslen(fc->filename) + 1) * sizeof(wchar_t);
-            wchar_t *p_full = (wchar_t *)arena_alloc(&s->arena, full_sz);
-            wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
-            if (p_full && p_name) {
-                wcscpy(p_full, fc->path);
-                wcscpy(p_name, fc->filename);
-                ImageEntry *e = &s->images[s->count];
-                e->path = p_full;
-                e->filename = p_name;
-                
-                WIN32_FILE_ATTRIBUTE_DATA wfad;
-                if (GetFileAttributesExW(p_full, GetFileExInfoStandard, &wfad)) {
-                    e->file_size = ((uint64_t)wfad.nFileSizeHigh << 32) | wfad.nFileSizeLow;
-                    e->last_modified = ((uint64_t)wfad.ftLastWriteTime.dwHighDateTime << 32) | wfad.ftLastWriteTime.dwLowDateTime;
-                    e->created_time = ((uint64_t)wfad.ftCreationTime.dwHighDateTime << 32) | wfad.ftCreationTime.dwLowDateTime;
-                } else {
-                    e->file_size = 0; e->last_modified = 0; e->created_time = 0;
-                }
-                
-                e->texture_slot = -1;
-                e->state = IMG_STATE_NEW;
-                e->thumb_requested = 0;
-                e->full_width = 0;
-                e->full_height = 0;
-                s->count++;
-                gal_apply_sort(s);
-                gal_update_layout(s);
-                g_state.needs_redraw = 1;
-                InvalidateRect(hwnd, NULL, TRUE);
-            }
+        ImageEntry *e = app_append_image_entry(s, fc->path, fc->filename, file_size, last_modified, created_time);
+        if (e) {
+            gal_apply_sort(s);
+            gal_update_layout(s);
+            g_state.needs_redraw = 1;
+            InvalidateRect(hwnd, NULL, TRUE);
         }
         break;
     }

@@ -17,11 +17,22 @@
 #define STB_DXT_IMPLEMENTATION
 #include "lib/stb_dxt.h"
 #include "src/types.h"
+
+// Stub for file scanner dependency in tests
+ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size, uint64_t last_modified, uint64_t created_time)
+{
+    (void)s; (void)path; (void)filename; (void)file_size; (void)last_modified; (void)created_time;
+    return NULL;
+}
+
+#include "src/utils.c"
 #include "src/renderer.c"
+#include "src/layout.c"
 #include "src/file_scanner.c"
 #define STB_IMAGE_IMPLEMENTATION
 #include "lib/stb_image.h"
 #include "src/image_loader.c"
+#include "src/file_monitor.c"
 #include "src/asset_worker.c"
 #include "src/ui.c"
 #include "src/gallery.c"

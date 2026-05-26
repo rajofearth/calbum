@@ -21,9 +21,7 @@ void app_init(AppState *s)
     s->last_tick = now.QuadPart;
 
     // Ring buffer fields
-    s->ring_head = s->ring_tail = 0;
-    InitializeCriticalSection(&s->work_lock);
-    s->ring_nonempty = CreateEventW(NULL, FALSE, FALSE, NULL);
+    rb_init(&s->work_queue, s->ring_slots, RING_CAPACITY);
 
     s->view_mode = VIEW_GALLERY;
     s->selected_index = -1;
@@ -46,8 +44,7 @@ void app_shutdown(AppState *s)
         }
 
     if (s->arena.buf) VirtualFree(s->arena.buf, 0, MEM_RELEASE);
-    DeleteCriticalSection(&s->work_lock);
-    if (s->ring_nonempty) CloseHandle(s->ring_nonempty);
+    rb_destroy(&s->work_queue);
 }
 
 void get_pictures_folder(wchar_t *buf, int len)
@@ -97,7 +94,7 @@ void app_load_folder(AppState *s, const wchar_t *path)
     arena_reset(&s->arena);
     s->count = s->capacity = 0;
     s->images = NULL;
-    s->ring_head = s->ring_tail = 0;
+    s->work_queue.head = s->work_queue.tail = 0;
 
     // ── 5. Reset view state ──────────────────────────────────────────
     s->view_mode = VIEW_GALLERY;
@@ -123,4 +120,46 @@ void app_update_title(AppState *s)
     wchar_t title[MAX_PATH_LEN + 32];
     wsprintfW(title, L"calbum — %s", s->current_dir);
     SetWindowTextW(s->hwnd, title);
+}
+
+ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size, uint64_t last_modified, uint64_t created_time)
+{
+    if (s->count >= s->capacity) {
+        int new_cap = s->capacity ? s->capacity * 2 : 256;
+        size_t sz   = new_cap * sizeof(ImageEntry);
+        size_t align = 16, mask = align - 1;
+        size_t off = (s->arena.offset + mask) & ~mask;
+        if (off + sz > s->arena.capacity) return NULL;
+
+        ImageEntry *old_images = s->images;
+        s->images = (ImageEntry *)(s->arena.buf + off);
+        s->arena.offset = off + sz;
+        // Copy surviving entries into the new block so nothing is lost
+        if (old_images && s->count > 0)
+            memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
+        s->capacity = new_cap;
+    }
+
+    size_t path_sz = (wcslen(path) + 1) * sizeof(wchar_t);
+    size_t name_sz = (wcslen(filename) + 1) * sizeof(wchar_t);
+    wchar_t *p_path = (wchar_t *)arena_alloc(&s->arena, path_sz);
+    wchar_t *p_name = (wchar_t *)arena_alloc(&s->arena, name_sz);
+    if (!p_path || !p_name) return NULL;
+
+    wcscpy(p_path, path);
+    wcscpy(p_name, filename);
+
+    ImageEntry *e = &s->images[s->count];
+    e->path = p_path;
+    e->filename = p_name;
+    e->file_size = file_size;
+    e->last_modified = last_modified;
+    e->created_time = created_time;
+    e->texture_slot = -1;
+    e->state = IMG_STATE_NEW;
+    e->thumb_requested = 0;
+    e->full_width = 0;
+    e->full_height = 0;
+    s->count++;
+    return e;
 }
