@@ -369,28 +369,33 @@ void gal_render_gallery(HDC hdc, AppState *s)
         GridItemType type = s->grid_items ? s->grid_items[i].type : ITEM_IMAGE;
         int img_idx = s->grid_items ? s->grid_items[i].image_index : i;
 
+        // Subtle border behind the card (drawn first so image/panel covers the center)
+        float border_opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.3f);
+
         if (type == ITEM_FOLDER)
         {
-            // Draw main folder backplate card
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x;
-            instances[inst_count].y = y;
-            instances[inst_count].w = thumb_size;
-            instances[inst_count].h = thumb_size;
-            instances[inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
-            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.75f;
-            instances[inst_count].corner_radius = s->layout.thumb_radius;
-            inst_count++;
+            border_opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.4f);
 
-            // Draw a subtle border around the folder card
+            // Draw border behind
             instances[inst_count] = (InstanceData){0};
             instances[inst_count].x = x - 1.0f * s->dpi_scale;
             instances[inst_count].y = y - 1.0f * s->dpi_scale;
             instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
             instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
             instances[inst_count].tex_index = TOKEN_BORDER;
-            instances[inst_count].opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.4f);
+            instances[inst_count].opacity = border_opacity;
             instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
+            inst_count++;
+
+            // Draw main folder backplate card on top
+            instances[inst_count] = (InstanceData){0};
+            instances[inst_count].x = x;
+            instances[inst_count].y = y;
+            instances[inst_count].w = thumb_size;
+            instances[inst_count].h = thumb_size;
+            instances[inst_count].tex_index = TOKEN_PANEL;
+            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.75f;
+            instances[inst_count].corner_radius = s->layout.thumb_radius;
             inst_count++;
         }
         else
@@ -404,6 +409,17 @@ void gal_render_gallery(HDC hdc, AppState *s)
                     aw_request_thumbnail(s, s->images[img_idx].path, THUMB_SIZE, s->hwnd);
                 }
 
+                // Draw border behind
+                instances[inst_count] = (InstanceData){0};
+                instances[inst_count].x = x - 1.0f * s->dpi_scale;
+                instances[inst_count].y = y - 1.0f * s->dpi_scale;
+                instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
+                instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
+                instances[inst_count].tex_index = TOKEN_BORDER;
+                instances[inst_count].opacity = border_opacity;
+                instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
+                inst_count++;
+
                 instances[inst_count] = (InstanceData){0};
                 instances[inst_count].x = x;
                 instances[inst_count].y = y;
@@ -412,24 +428,13 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 instances[inst_count].tex_index = (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU) ?
                                                       s->images[img_idx].texture_slot :
                                                       TOKEN_DEFAULT;
-                instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.85f;
+                instances[inst_count].opacity = 1.0f;
                 instances[inst_count].corner_radius = s->layout.thumb_radius;
 
                 if (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU && s->images[img_idx].texture_slot != -1)
                 {
                     s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
                 }
-                inst_count++;
-
-                // Draw a subtle border around the image card
-                instances[inst_count] = (InstanceData){0};
-                instances[inst_count].x = x - 1.0f * s->dpi_scale;
-                instances[inst_count].y = y - 1.0f * s->dpi_scale;
-                instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
-                instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
-                instances[inst_count].tex_index = TOKEN_BORDER;
-                instances[inst_count].opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.3f);
-                instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
                 inst_count++;
             }
         }
