@@ -39,6 +39,8 @@
 
 // ── 7. Application Logic ───────────────────────────────────────────────
 #include "src/ui.c"
+#include "src/gallery_sort.c"
+#include "src/gallery_fullimage.c"
 #include "src/gallery.c"
 #include "src/app.c"
 

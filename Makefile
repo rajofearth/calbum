@@ -1,7 +1,7 @@
 CC      ?= gcc
 LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
-CFLAGS_RELEASE = -O2 -mwindows -Wall -Wextra
-CFLAGS_DEBUG   = -O0 -mwindows -Wall -Wextra -Wpedantic -g
+CFLAGS_RELEASE = -std=c17 -O2 -mwindows -Wall -Wextra
+CFLAGS_DEBUG   = -std=c17 -O0 -mwindows -Wall -Wextra -Wpedantic -g
 
 BUILD    = build.c
 TARGET   = calbum.exe

@@ -101,6 +101,7 @@ The project follows **data-oriented design** principles:
 - **Immediate-mode rendering** — UI is drawn fresh every frame; no retained widget tree
 - **Lazy loading** — Thumbnails and full images are loaded on demand, not at startup
 - **Minimal dependencies** — Primarily Win32/COM APIs (Direct2D, DirectWrite, Direct3D 11, WIC) and lightweight single-file integrations
+- **Function pointers used where appropriate** — Sort mode selection via `qsort` comparator, COM vtables for DirectX interfaces
 
 ### Module Map
 
@@ -113,7 +114,9 @@ The project follows **data-oriented design** principles:
 | `asset_worker.c`     | Background thread for decoding images and generating thumbnails via WIC |
 | `image_loader.c`     | WIC-based image loading and COM interface utilities |
 | `renderer.c`         | Direct2D / DirectWrite and D3D11 rendering context, drawing primitives |
-| `gallery.c`          | Gallery grid layout, UI interaction, full-image viewer, scrolling |
+| `gallery.c`          | Gallery grid layout, rendering, click handling, scrolling |
+| `gallery_sort.c`     | Sort comparators and apply-sort logic |
+| `gallery_fullimage.c`| Full-image viewer mode with zoom, pan, info overlay |
 | `build.c`            | Unity build master — includes all sources |
 
 ---
@@ -125,8 +128,7 @@ This project maintains a high quality bar:
 - **Static analysis** via `clang-tidy` (configured in `.clang-tidy`)
 - **Code formatting** via `clang-format` (configured in `.clang-format`)
 - **No file exceeds 1,000 lines** — each module has a focused responsibility
-- **No dynamic dispatch** — direct function calls, no v-tables
-- **No C runtime dependencies in main loop** — only Win32 API calls
+- **Enforced C17 standard** via `-std=c17` in the Makefile
 
 ### Style Guide
 
@@ -135,8 +137,7 @@ This project maintains a high quality bar:
 - 4-space indentation (no tabs)
 - 120-character column limit
 - `snake_case` for functions and variables
-- Prefixes: `fs_` (file scanner), `il_` (image loader), `gal_` (gallery)
-- Hungarian notation avoided — types are explicit
+- Module prefixes: `fs_` (file scanner), `il_` (image loader), `gal_` (gallery), `r_` (renderer), `aw_` (asset worker), `fm_` (file monitor), `ui_` (UI widgets), `app_` (app state)
 
 ---
 
