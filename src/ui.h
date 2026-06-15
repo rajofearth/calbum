@@ -11,6 +11,7 @@ int ui_is_hovered(float x, float y, float w, float h, float mx, float my);
 
 // Renders a sleek translucent backplate panel with an optional border
 void ui_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int has_border, float corner_radius);
+void ui_blur_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int has_border, float corner_radius);
 
 // Renders a reusable premium button backdrop, returns 1 if hovered
 int ui_button(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, float mx, float my, float corner_radius);

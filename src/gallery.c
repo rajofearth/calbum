@@ -401,16 +401,21 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
     ui_button(instances, &inst_count, (float)btn_x, (float)btn_y, (float)btn_w, (float)btn_h, 0.8f, (float)pt.x, (float)pt.y, 6.0f * s->dpi_scale);
 
+    // Draw the main gallery and button first
+    r_draw_instances(s, instances, inst_count);
+    inst_count = 0;
+
     if (s->sort_menu_open) {
+        r_copy_backbuffer_for_blur(s);
+
         int menu_w = (int)(160 * s->dpi_scale);
         int menu_h = 5 * (int)(30 * s->dpi_scale);
         int menu_x = btn_x + btn_w - menu_w;
         int menu_y = btn_y + btn_h + (int)(5 * s->dpi_scale);
         
-        ui_panel(instances, &inst_count, (float)menu_x, (float)menu_y, (float)menu_w, (float)menu_h, 0.92f, 1, s->layout.card_radius);
+        ui_blur_panel(instances, &inst_count, (float)menu_x, (float)menu_y, (float)menu_w, (float)menu_h, 0.92f, 1, s->layout.card_radius);
+        r_draw_instances(s, instances, inst_count);
     }
-
-    r_draw_instances(s, instances, inst_count);
 
     // Render Folder text & icons in D2D pass
     if (s->grid_items) {
@@ -736,8 +741,13 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     float info_w = 300.0f * s->dpi_scale;
     float info_h = 240.0f * s->dpi_scale;
 
+    // Draw all background elements first
+    r_draw_instances(s, instances, inst_count);
+    inst_count = 0;
+
     if (s->info_open) {
-        ui_panel(instances, &inst_count, info_x, info_y, info_w, info_h, 0.92f, 1, s->layout.card_radius);
+        r_copy_backbuffer_for_blur(s);
+        ui_blur_panel(instances, &inst_count, info_x, info_y, info_w, info_h, 0.92f, 1, s->layout.card_radius);
 
         // Circular close button in top right of info card
         float close_w = 20.0f * s->dpi_scale;
@@ -745,6 +755,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         float close_x = info_x + info_w - close_w - 10.0f * s->dpi_scale;
         float close_y = info_y + 10.0f * s->dpi_scale;
         ui_button(instances, &inst_count, close_x, close_y, close_w, close_h, 0.6f, (float)pt.x, (float)pt.y, close_w * 0.5f);
+
+        // Draw the info panel overlay elements
+        r_draw_instances(s, instances, inst_count);
+        inst_count = 0;
     }
 
     // Draw all D3D11 geometry

@@ -60,7 +60,8 @@ typedef enum {
     TOKEN_FULL_IMAGE = -5,
     TOKEN_DROP_SHADOW = -6,
     TOKEN_ACCENT = -7,
-    TOKEN_SELECTION_OUTLINE = -8
+    TOKEN_SELECTION_OUTLINE = -8,
+    TOKEN_BLUR = -9
 } RenderToken;
 
 // -------------------------------------------------------------------------
@@ -344,6 +345,9 @@ typedef struct AppState {
     ID3D11BlendState*       blend_state;
     ID3D11Buffer*           constant_buffer;
     ID3D11Buffer*           theme_buffer;
+    ID3D11Texture2D*        blur_tex;
+    ID3D11ShaderResourceView* blur_srv;
+    ID3D11Texture2D*        back_buffer;
     
     GPUTexturePool          tex_pool;
 
@@ -493,6 +497,7 @@ int  r_alloc_texture_slot(AppState *s, int image_index);
 void r_upload_texture(AppState *s, int slot, void *bc1_data);
 void r_evict_texture(AppState *s, int slot);
 void r_draw_instances(AppState *s, void *instances, int count);
+void r_copy_backbuffer_for_blur(AppState *s);
 void r_draw_text(AppState *s, const wchar_t* text, float x, float y, float w, float h);
 void r_draw_text_aligned(AppState *s, const wchar_t* text, float x, float y, float w, float h, int align_x, int align_y, struct IDWriteTextFormat* format, float color[4]);
 int  r_load_full_image(AppState *s, const wchar_t *path);

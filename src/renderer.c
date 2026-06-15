@@ -12,7 +12,8 @@
 static const char* shader_src =
     "cbuffer Constants : register(b0) {\n"
     "    float2 window_size;\n"
-    "    float2 padding;\n"
+    "    float dpi_scale;\n"
+    "    float padding;\n"
     "};\n"
     "cbuffer ThemeConstants : register(b1) {\n"
     "    float4 theme_bg;\n"
@@ -56,6 +57,7 @@ static const char* shader_src =
     "}\n"
     "Texture2DArray textures : register(t0);\n"
     "Texture2D full_texture : register(t1);\n"
+    "Texture2D blur_texture : register(t2);\n"
     "SamplerState samp : register(s0);\n"
     "float rounded_rect_sdf(float2 p, float2 size, float radius) {\n"
     "    float2 half_size = size * 0.5;\n"
@@ -75,6 +77,38 @@ static const char* shader_src =
     "    else if (input.tex_idx == -6) color = float4(0.0, 0.0, 0.0, 1.0);\n"
     "    else if (input.tex_idx == -7) color = theme_accent;\n"
     "    else if (input.tex_idx == -8) color = theme_accent;\n"
+    "    else if (input.tex_idx == -9) {\n"
+    "        float2 uv = input.pos.xy / window_size;\n"
+    "        float2 texel = (1.5 * dpi_scale) / window_size;\n"
+    "        float4 sum = 0.0;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv, 2.5) * 0.16;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 1.0,  0.0) * texel, 2.5) * 0.08;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-1.0,  0.0) * texel, 2.5) * 0.08;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0,  1.0) * texel, 2.5) * 0.08;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0, -1.0) * texel, 2.5) * 0.08;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 1.0,  1.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-1.0,  1.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 1.0, -1.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-1.0, -1.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 2.0,  0.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-2.0,  0.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0,  2.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0, -2.0) * texel, 2.5) * 0.04;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 2.0,  2.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-2.0,  2.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 2.0, -2.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-2.0, -2.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 3.0,  0.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-3.0,  0.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0,  3.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 0.0, -3.0) * texel, 2.5) * 0.02;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 3.0,  3.0) * texel, 2.5) * 0.01;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-3.0,  3.0) * texel, 2.5) * 0.01;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2( 3.0, -3.0) * texel, 2.5) * 0.01;\n"
+    "        sum += blur_texture.SampleLevel(samp, uv + float2(-3.0, -3.0) * texel, 2.5) * 0.01;\n"
+    "        color.rgb = lerp(sum.rgb, theme_panel.rgb, 0.6);\n"
+    "        color.a = 1.0;\n"
+    "    }\n"
     "    else if (input.tex_idx < 0) color = theme_panel;\n"
     "    else color = textures.Sample(samp, float3(input.uv, input.tex_idx));\n"
     "    color.a *= input.opacity * alpha;\n"
@@ -237,6 +271,10 @@ int r_init(AppState *s)
 void r_resize(AppState *s)
 {
     if (s->rtv) { s->rtv->lpVtbl->Release(s->rtv); s->rtv = NULL; }
+    if (s->blur_tex) { s->blur_tex->lpVtbl->Release(s->blur_tex); s->blur_tex = NULL; }
+    if (s->blur_srv) { s->blur_srv->lpVtbl->Release(s->blur_srv); s->blur_srv = NULL; }
+    if (s->back_buffer) { s->back_buffer->lpVtbl->Release(s->back_buffer); s->back_buffer = NULL; }
+
     if (!s->swap_chain) return;
     s->swap_chain->lpVtbl->ResizeBuffers(s->swap_chain, 0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
 
@@ -244,7 +282,19 @@ void r_resize(AppState *s)
     s->swap_chain->lpVtbl->GetBuffer(s->swap_chain, 0, &IID_ID3D11Texture2D, (void**)&backBuffer);
     if (backBuffer) {
         s->d3d_device->lpVtbl->CreateRenderTargetView(s->d3d_device, (ID3D11Resource*)backBuffer, NULL, &s->rtv);
-        backBuffer->lpVtbl->Release(backBuffer);
+        
+        D3D11_TEXTURE2D_DESC desc;
+        backBuffer->lpVtbl->GetDesc(backBuffer, &desc);
+        desc.MipLevels = 0; // generate full mip chain
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET; // required for GenerateMips
+        desc.CPUAccessFlags = 0;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS; // required for GenerateMips
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        
+        s->d3d_device->lpVtbl->CreateTexture2D(s->d3d_device, &desc, NULL, &s->blur_tex);
+        s->d3d_device->lpVtbl->CreateShaderResourceView(s->d3d_device, (ID3D11Resource*)s->blur_tex, NULL, &s->blur_srv);
+        
+        s->back_buffer = backBuffer;
     }
 
     if (s->d2d_rtv) { ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv); s->d2d_rtv = NULL; }
@@ -283,7 +333,8 @@ void r_resize(AppState *s)
         float* data = (float*)ms.pData;
         data[0] = (float)s->window_width;
         data[1] = (float)s->window_height;
-        data[2] = 0; data[3] = 0;
+        data[2] = s->dpi_scale;
+        data[3] = 0.0f;
         s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource*)s->constant_buffer, 0);
     }
 }
@@ -351,6 +402,22 @@ void r_upload_texture(AppState *s, int slot, void *bc1_data)
     s->d3d_context->lpVtbl->UpdateSubresource(s->d3d_context, (ID3D11Resource*)s->tex_pool.texture_array, slot, NULL, bc1_data, pitch, 0);
 }
 
+void r_copy_backbuffer_for_blur(AppState *s)
+{
+    if (s->back_buffer && s->blur_tex) {
+        s->d3d_context->lpVtbl->CopySubresourceRegion(
+            s->d3d_context,
+            (ID3D11Resource*)s->blur_tex, 0,
+            0, 0, 0,
+            (ID3D11Resource*)s->back_buffer, 0,
+            NULL
+        );
+        if (s->blur_srv) {
+            s->d3d_context->lpVtbl->GenerateMips(s->d3d_context, s->blur_srv);
+        }
+    }
+}
+
 void r_draw_instances(AppState *s, void *instances, int count)
 {
     if (count == 0) return;
@@ -374,11 +441,12 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->VSSetShader(s->d3d_context, s->vs, NULL, 0);
     s->d3d_context->lpVtbl->VSSetConstantBuffers(s->d3d_context, 0, 1, &s->constant_buffer);
     s->d3d_context->lpVtbl->PSSetShader(s->d3d_context, s->ps, NULL, 0);
+    s->d3d_context->lpVtbl->PSSetConstantBuffers(s->d3d_context, 0, 1, &s->constant_buffer);
     s->d3d_context->lpVtbl->PSSetConstantBuffers(s->d3d_context, 1, 1, &s->theme_buffer);
     s->d3d_context->lpVtbl->PSSetSamplers(s->d3d_context, 0, 1, &s->sampler);
 
-    ID3D11ShaderResourceView* srvs[2] = { s->tex_pool.texture_array_srv, s->active_full_srv };
-    s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 2, srvs);
+    ID3D11ShaderResourceView* srvs[3] = { s->tex_pool.texture_array_srv, s->active_full_srv, s->blur_srv };
+    s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 3, srvs);
 
     s->d3d_context->lpVtbl->DrawInstanced(s->d3d_context, 4, count, 0, 0);
 }
@@ -467,6 +535,10 @@ void r_shutdown(AppState *s)
     if (s->dwrite_factory) ((IUnknown*)s->dwrite_factory)->lpVtbl->Release((IUnknown*)s->dwrite_factory);
     if (s->d2d_rtv) ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv);
     if (s->d2d_factory) ((IUnknown*)s->d2d_factory)->lpVtbl->Release((IUnknown*)s->d2d_factory);
+
+    if (s->blur_tex) s->blur_tex->lpVtbl->Release(s->blur_tex);
+    if (s->blur_srv) s->blur_srv->lpVtbl->Release(s->blur_srv);
+    if (s->back_buffer) s->back_buffer->lpVtbl->Release(s->back_buffer);
 
     if (s->d3d_device) s->d3d_device->lpVtbl->Release(s->d3d_device);
 }
