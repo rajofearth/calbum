@@ -124,6 +124,10 @@ void gal_clamp_zoom_pan(AppState *s)
 
     float main_w = (float) s->window_width - 40.0f * s->dpi_scale;
     float main_h = (float) s->window_height - (s->layout.topbar_height + 160.0f * s->dpi_scale);
+    if (main_w <= 0.0f)
+        main_w = 1.0f;
+    if (main_h <= 0.0f)
+        main_h = 1.0f;
     float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
     float display_w = img_w * scale * s->zoom_level;
     float display_h = img_h * scale * s->zoom_level;

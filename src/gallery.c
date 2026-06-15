@@ -183,21 +183,22 @@ int gal_handle_ui_click(AppState *s, int x, int y)
     if (s->view_mode != VIEW_GALLERY)
         return 0;
 
-    int btn_w = 80;
-    int btn_h = 30;
-    int btn_x = s->window_width - btn_w - 20; // Top right
-    int btn_y = 10;
+    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
+    int btn_w = (int) (90 * dpi);
+    int btn_h = (int) (s->layout.button_height);
+    int btn_x = (int) (s->window_width - btn_w - 20 * dpi);
+    int btn_y = (int) (10 * dpi);
 
     if (s->sort_menu_open)
     {
-        int menu_w = 150;
-        int menu_h = 5 * 30;
+        int menu_w = (int) (160 * dpi);
+        int menu_h = 5 * (int) (30 * dpi);
         int menu_x = btn_x + btn_w - menu_w;
-        int menu_y = btn_y + btn_h + 5;
+        int menu_y = btn_y + btn_h + (int) (5 * dpi);
 
         if (x >= menu_x && x <= menu_x + menu_w && y >= menu_y && y <= menu_y + menu_h)
         {
-            int row = (y - menu_y) / 30;
+            int row = (y - menu_y) / (int) (30 * dpi);
             gal_apply_sort_option(s, row + 1);
         }
         s->sort_menu_open = 0;
@@ -224,6 +225,10 @@ void gal_update_layout(AppState *s)
         s->scroll_target_y = (float) ms;
     if (s->scroll_current_y > (float) ms)
         s->scroll_current_y = (float) ms;
+    if (s->view_mode == VIEW_FULLIMAGE)
+    {
+        gal_clamp_zoom_pan(s);
+    }
     s->needs_redraw = 1;
 }
 

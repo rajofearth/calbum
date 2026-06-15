@@ -300,6 +300,13 @@ int r_init(AppState *s)
 
 void r_resize(AppState *s)
 {
+    if (s->d3d_context)
+    {
+        s->d3d_context->lpVtbl->OMSetRenderTargets(s->d3d_context, 0, NULL, NULL);
+        ID3D11ShaderResourceView *null_srvs[3] = {NULL, NULL, NULL};
+        s->d3d_context->lpVtbl->PSSetShaderResources(s->d3d_context, 0, 3, null_srvs);
+    }
+
     if (s->rtv)
     {
         s->rtv->lpVtbl->Release(s->rtv);
@@ -319,6 +326,17 @@ void r_resize(AppState *s)
     {
         s->back_buffer->lpVtbl->Release(s->back_buffer);
         s->back_buffer = NULL;
+    }
+
+    if (s->d2d_rtv)
+    {
+        ((IUnknown *) s->d2d_rtv)->lpVtbl->Release((IUnknown *) s->d2d_rtv);
+        s->d2d_rtv = NULL;
+    }
+    if (s->d2d_brush)
+    {
+        ((IUnknown *) s->d2d_brush)->lpVtbl->Release((IUnknown *) s->d2d_brush);
+        s->d2d_brush = NULL;
     }
 
     if (!s->swap_chain)
@@ -344,17 +362,6 @@ void r_resize(AppState *s)
                                                         &s->blur_srv);
 
         s->back_buffer = backBuffer;
-    }
-
-    if (s->d2d_rtv)
-    {
-        ((IUnknown *) s->d2d_rtv)->lpVtbl->Release((IUnknown *) s->d2d_rtv);
-        s->d2d_rtv = NULL;
-    }
-    if (s->d2d_brush)
-    {
-        ((IUnknown *) s->d2d_brush)->lpVtbl->Release((IUnknown *) s->d2d_brush);
-        s->d2d_brush = NULL;
     }
 
     IDXGISurface *dxgi_surface = NULL;

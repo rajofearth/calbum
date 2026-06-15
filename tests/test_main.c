@@ -179,6 +179,22 @@ static void test_scroll_clamp(void)
     PASS();
 }
 
+static void test_zoom_clamp_on_update_layout(void)
+{
+    AppState s;
+    setup(&s, 50, 1200, 800);
+    s.view_mode = VIEW_FULLIMAGE;
+    s.zoom_level = 2.0f;
+    s.zoom_pan_x = 9999.0f;
+    s.zoom_pan_y = 9999.0f;
+
+    TEST("zoom pan clamped on layout update");
+    gal_update_layout(&s);
+    CHECK(s.zoom_pan_x < 9999.0f, "zoom_pan_x clamped");
+    CHECK(s.zoom_pan_y < 9999.0f, "zoom_pan_y clamped");
+    PASS();
+}
+
 static void test_image_entry(void)
 {
     ImageEntry e;
@@ -459,6 +475,7 @@ int main(void)
     test_gal_hit_test();
     test_selection_bounds();
     test_scroll_clamp();
+    test_zoom_clamp_on_update_layout();
     test_image_entry();
     test_viewmode();
     test_extensions();

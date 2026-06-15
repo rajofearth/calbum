@@ -323,8 +323,13 @@ static void on_size(HWND hwnd)
 {
     RECT client;
     GetClientRect(hwnd, &client);
-    g_state.window_width = client.right - client.left;
-    g_state.window_height = client.bottom - client.top;
+    int width = client.right - client.left;
+    int height = client.bottom - client.top;
+    if (width <= 0 || height <= 0)
+        return;
+
+    g_state.window_width = width;
+    g_state.window_height = height;
     r_resize(&g_state);
     gal_update_layout(&g_state);
     InvalidateRect(hwnd, NULL, TRUE);
@@ -463,7 +468,7 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
 
     // Check scrollbar
     int ms = gal_max_scroll(&g_state);
-    if (ms > 0 && x >= g_state.window_width - 16)
+    if (ms > 0 && x >= g_state.window_width - 16.0f * g_state.dpi_scale)
     {
         g_state.is_dragging_scrollbar = 1;
         g_state.drag_start_y = (float) y;
@@ -489,10 +494,10 @@ static void on_mouse_move(HWND hwnd, int x, int y)
         int ms = gal_max_scroll(&g_state);
         if (ms > 0)
         {
-            float track_h = (float) g_state.window_height - 16.0f;
+            float track_h = (float) g_state.window_height - 16.0f * g_state.dpi_scale;
             float thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * track_h;
-            if (thumb_h < 20.0f)
-                thumb_h = 20.0f;
+            if (thumb_h < 24.0f * g_state.dpi_scale)
+                thumb_h = 24.0f * g_state.dpi_scale;
 
             float dy = (float) y - g_state.drag_start_y;
             float scrollable_track = track_h - thumb_h;
@@ -774,7 +779,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             GetCursorPos(&pt);
             ScreenToClient(g_state.hwnd, &pt);
             float cx = (float) g_state.window_width / 2.0f;
-            int hovered = (pt.x >= cx - 60.0f && pt.x <= cx + 60.0f && pt.y >= 20.0f && pt.y <= 50.0f);
+            float bx = cx - 60.0f * g_state.dpi_scale;
+            float by = 20.0f * g_state.dpi_scale;
+            float bw = 120.0f * g_state.dpi_scale;
+            float bh = 30.0f * g_state.dpi_scale;
+            int hovered = (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh);
             if (hovered)
             {
                 g_state.zoom_ui_timer = 2.0f;
