@@ -8,6 +8,12 @@
 // controlled by inclusion order, not by header files.
 // =========================================================================
 #include <windows.h>
+
+// Ensure 'interface' is defined for COM headers (required by some language servers)
+#ifndef interface
+#define interface struct
+#endif
+
 #include <shlobj.h>
 #include <d3d11.h>
 #include <wincodec.h>
@@ -107,7 +113,9 @@ static inline void arena_init(Arena *a, void *buf, size_t cap)
 
 static inline void *arena_alloc(Arena *a, size_t size)
 {
-    size_t align = 16, mask = align - 1, off = (a->offset + mask) & ~mask;
+    size_t align = 16;
+    size_t mask = align - 1;
+    size_t off = (a->offset + mask) & ~mask;
     if (off + size > a->capacity)
         return NULL;
     a->offset = off + size;
@@ -162,7 +170,7 @@ static inline int rb_push(RingBuffer *rb, void *item)
         ok = 1;
     }
     LeaveCriticalSection(&rb->lock);
-    if (ok)
+    if (ok != 0)
         SetEvent(rb->nonempty);
     return ok;
 }
@@ -185,7 +193,7 @@ static inline void *rb_wait_pop(RingBuffer *rb, DWORD timeout_ms)
     for (;;)
     {
         void *item = rb_try_pop(rb);
-        if (item)
+        if (item != NULL)
             return item;
         if (WaitForSingleObject(rb->nonempty, timeout_ms) != WAIT_OBJECT_0)
             return NULL;
@@ -197,11 +205,11 @@ static inline void *rb_wait_pop(RingBuffer *rb, DWORD timeout_ms)
 // -------------------------------------------------------------------------
 static inline float lerpf(float a, float b, float t)
 {
-    if (t <= 0.0f)
+    if (t <= 0.0F)
         return a;
-    if (t >= 1.0f)
+    if (t >= 1.0F)
         return b;
-    return a + (b - a) * t;
+    return a + ((b - a) * t);
 }
 static inline float clampf(float v, float lo, float hi)
 {
@@ -227,7 +235,7 @@ static inline int ceil_div(int a, int b)
 static inline float ease_out_factor(float speed, float dt)
 {
     float x = speed * dt;
-    return (x < 0.01f) ? x : (1.0f - 1.0f / (1.0f + x + 0.5f * x * x));
+    return (x < 0.01F) ? x : (1.0F - (1.0F / (1.0F + x + (0.5F * x * x))));
 }
 
 // -------------------------------------------------------------------------
@@ -562,6 +570,8 @@ void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, fl
 void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, float w, float h, int align_x, int align_y,
                          struct IDWriteTextFormat *format, float color[4]);
 float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format);
+void r_draw_text_ext(AppState *s, const wchar_t *text, float x, float y, float w, float h,
+                         struct IDWriteTextFormat *format, float color[4]);
 int r_load_full_image(AppState *s, const wchar_t *path);
 void r_free_full_image(AppState *s);
 FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path);

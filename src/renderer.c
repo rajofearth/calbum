@@ -6,7 +6,7 @@
 #include <d3dcompiler.h>
 #include <d2d1.h>
 #include <dwrite.h>
-#include <stdio.h>
+#include <stddef.h>
 
 // ── Shaders ─────────────────────────────────────────────────────────────
 static const char *shader_src =
@@ -272,15 +272,15 @@ int r_init(AppState *s)
     {
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 15.0f, L"en-US", &s->dwrite_format_regular);
+            DWRITE_FONT_STRETCH_NORMAL, 15.0F, L"en-US", &s->dwrite_format_regular);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 15.0f, L"en-US", &s->dwrite_format_semibold);
+            DWRITE_FONT_STRETCH_NORMAL, 15.0F, L"en-US", &s->dwrite_format_semibold);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.5f, L"en-US", &s->dwrite_format_small);
+            DWRITE_FONT_STRETCH_NORMAL, 11.5F, L"en-US", &s->dwrite_format_small);
 
         // Find best monospace font available
         const wchar_t *mono_font = L"Consolas";
@@ -307,23 +307,23 @@ int r_init(AppState *s)
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_mono);
+            DWRITE_FONT_STRETCH_NORMAL, 14.0F, L"en-US", &s->dwrite_format_mono);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &s->dwrite_format_mono_small);
+            DWRITE_FONT_STRETCH_NORMAL, 11.0F, L"en-US", &s->dwrite_format_mono_small);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.5f, L"en-US", &s->dwrite_format_small_semibold);
+            DWRITE_FONT_STRETCH_NORMAL, 11.5F, L"en-US", &s->dwrite_format_small_semibold);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 18.0f, L"en-US", &s->dwrite_format_icons);
+            DWRITE_FONT_STRETCH_NORMAL, 18.0F, L"en-US", &s->dwrite_format_icons);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 48.0f, L"en-US", &s->dwrite_format_icons_large);
+            DWRITE_FONT_STRETCH_NORMAL, 48.0F, L"en-US", &s->dwrite_format_icons_large);
 
         // Default mapping to keep old code happy
         s->dwrite_format = s->dwrite_format_regular;
@@ -407,8 +407,8 @@ void r_resize(AppState *s)
         props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
         props.pixelFormat.format = DXGI_FORMAT_R8G8B8A8_UNORM;
         props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-        props.dpiX = 0.0f;
-        props.dpiY = 0.0f;
+        props.dpiX = 0.0F;
+        props.dpiY = 0.0F;
         props.usage = D2D1_RENDER_TARGET_USAGE_NONE;
         props.minLevel = D2D1_FEATURE_LEVEL_DEFAULT;
 
@@ -417,7 +417,7 @@ void r_resize(AppState *s)
 
         if (s->d2d_rtv)
         {
-            D2D1_COLOR_F color = {1.0f, 1.0f, 1.0f, 1.0f};
+            D2D1_COLOR_F color = {1.0F, 1.0F, 1.0F, 1.0F};
             s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &color, NULL, &s->d2d_brush);
         }
     }
@@ -425,7 +425,7 @@ void r_resize(AppState *s)
     D3D11_VIEWPORT vp = {0};
     vp.Width = (float) s->window_width;
     vp.Height = (float) s->window_height;
-    vp.MaxDepth = 1.0f;
+    vp.MaxDepth = 1.0F;
     s->d3d_context->lpVtbl->RSSetViewports(s->d3d_context, 1, &vp);
 
     if (s->constant_buffer)
@@ -437,7 +437,7 @@ void r_resize(AppState *s)
         data[0] = (float) s->window_width;
         data[1] = (float) s->window_height;
         data[2] = s->dpi_scale;
-        data[3] = 0.0f;
+        data[3] = 0.0F;
         s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource *) s->constant_buffer, 0);
     }
 }
@@ -446,7 +446,7 @@ void r_clear(AppState *s, float r, float g, float b)
 {
     if (!s->rtv)
         return;
-    float color[4] = { r, g, b, 1.0f };
+    float color[4] = { r, g, b, 1.0F };
     s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, color);
 }
 
@@ -549,7 +549,7 @@ void r_draw_instances(AppState *s, void *instances, int count)
     s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource *) s->instance_buffer, 0);
 
     s->d3d_context->lpVtbl->OMSetRenderTargets(s->d3d_context, 1, &s->rtv, NULL);
-    float blendFactor[4] = {0, 0, 0, 0};
+    float blendFactor[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     s->d3d_context->lpVtbl->OMSetBlendState(s->d3d_context, s->blend_state, blendFactor, 0xFFFFFFFF);
 
     s->d3d_context->lpVtbl->IASetInputLayout(s->d3d_context, s->input_layout);
@@ -595,11 +595,13 @@ void r_draw_text_ext(AppState *s, const wchar_t *text, float x, float y, float w
 
 void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
 {
-    float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    float white[4] = {1.0F, 1.0F, 1.0F, 1.0F};
     r_draw_text_ext(s, text, x, y, w, h, s->dwrite_format, white);
 }
 
-void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, float w, float h, int align_x, int align_y,
+void r_draw_text_aligned(AppState *s, const wchar_t *text,
+                         /* x, y, w, h */ float x, float y, float w, float h,
+                         int align_x, int align_y,
                          struct IDWriteTextFormat *format, float color[4])
 {
     if (!s->d2d_rtv || !s->dwrite_factory || !format)
@@ -761,14 +763,14 @@ int r_alloc_full_image_slot(AppState *s)
     int end_strip_idx = -1;
     if (s->images && s->strip_image_count > 0)
     {
-        float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
-        float main_w = (float) s->window_width - 40.0f * dpi;
-        float avail_w = main_w - 100.0f * dpi;
+        float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
+        float main_w = (float) s->window_width - (40.0F * dpi);
+        float avail_w = main_w - (100.0F * dpi);
         int thumb_w = (int) (80 * dpi);
         int thumb_pad = (int) (10 * dpi);
         int col_w = thumb_w + thumb_pad;
 
-        int num_strip_thumbs = (int) (avail_w / col_w);
+        int num_strip_thumbs = (int) (avail_w / (float) col_w);
         if (num_strip_thumbs < 1)
             num_strip_thumbs = 1;
 
@@ -855,7 +857,8 @@ int r_load_full_image(AppState *s, const wchar_t *path)
         return 1;
     }
 
-    int w = 0, h = 0;
+    int w = 0;
+    int h = 0;
     void *rgba = il_load_full_image(path, &w, &h);
     if (!rgba)
         return 0;
@@ -904,13 +907,13 @@ int r_load_full_image(AppState *s, const wchar_t *path)
 float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format)
 {
     if (!s->dwrite_factory || !format || !text)
-        return 0.0f;
+        return 0.0F;
 
     IDWriteTextLayout *layout = NULL;
     HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(
-        s->dwrite_factory, text, (UINT32) wcslen(text), format, 9999.0f, 9999.0f, &layout);
+        s->dwrite_factory, text, (UINT32) wcslen(text), format, 9999.0F, 9999.0F, &layout);
 
-    float width = 0.0f;
+    float width = 0.0F;
     if (SUCCEEDED(hr) && layout)
     {
         DWRITE_TEXT_METRICS metrics;

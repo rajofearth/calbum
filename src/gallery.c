@@ -9,18 +9,19 @@
 
 void gal_update_layout_scales(AppState *s)
 {
-    if (s->dpi_scale <= 0.0f)
-        s->dpi_scale = 1.0f;
+    if (s->dpi_scale <= 0.0F)
+        s->dpi_scale = 1.0F;
 
-    s->layout.grid_gap = 12.0f * s->dpi_scale;
-    s->layout.panel_padding = 12.0f * s->dpi_scale;
-    s->layout.thumb_radius = 4.0f * s->dpi_scale;
-    s->layout.card_radius = 6.0f * s->dpi_scale;
-    s->layout.button_height = 26.0f * s->dpi_scale;
-    s->layout.topbar_height = 38.0f * s->dpi_scale;
-    s->layout.scrollbar_w = 6.0f * s->dpi_scale;
+    s->layout.grid_gap = 12.0F * s->dpi_scale;
+    s->layout.panel_padding = 12.0F * s->dpi_scale;
+    s->layout.thumb_radius = 4.0F * s->dpi_scale;
+    s->layout.card_radius = 6.0F * s->dpi_scale;
+    s->layout.button_height = 26.0F * s->dpi_scale;
+    s->layout.topbar_height = 38.0F * s->dpi_scale;
+    s->layout.scrollbar_w = 6.0F * s->dpi_scale;
 }
 
+// qsort comparator
 static int cmp_date_created(const void *a, const void *b)
 {
     ImageEntry *ea = (ImageEntry *) a;
@@ -32,6 +33,7 @@ static int cmp_date_created(const void *a, const void *b)
     return _wcsicmp(ea->path, eb->path);
 }
 
+// qsort comparator
 static int cmp_date_modified(const void *a, const void *b)
 {
     ImageEntry *ea = (ImageEntry *) a;
@@ -43,6 +45,7 @@ static int cmp_date_modified(const void *a, const void *b)
     return _wcsicmp(ea->path, eb->path);
 }
 
+// qsort comparator
 static int cmp_size(const void *a, const void *b)
 {
     ImageEntry *ea = (ImageEntry *) a;
@@ -183,10 +186,10 @@ int gal_handle_ui_click(AppState *s, int x, int y)
     if (s->view_mode != VIEW_GALLERY)
         return 0;
 
-    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
+    float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
     int btn_w = (int) (90 * dpi);
     int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) (s->window_width - btn_w - 20 * dpi);
+    int btn_x = (int) ((float)s->window_width - (float)btn_w - (20.0F * dpi));
     int btn_y = (int) (10 * dpi);
 
     if (s->sort_menu_open)
@@ -237,7 +240,7 @@ void gal_tick_smooth_scroll(AppState *s)
     if (s->view_mode != VIEW_GALLERY)
         return;
     float diff = s->scroll_target_y - s->scroll_current_y;
-    if (diff > -0.5f && diff < 0.5f)
+    if (diff > -0.5F && diff < 0.5F)
     {
         s->scroll_current_y = s->scroll_target_y;
         return;
@@ -251,8 +254,8 @@ void gal_scroll(AppState *s, float delta)
 {
     s->scroll_target_y -= delta;
     int ms = gal_max_scroll(s);
-    if (s->scroll_target_y < 0.0f)
-        s->scroll_target_y = 0.0f;
+    if (s->scroll_target_y < 0.0F)
+        s->scroll_target_y = 0.0F;
     if (s->scroll_target_y > (float) ms)
         s->scroll_target_y = (float) ms;
     s->needs_redraw = 1;
@@ -263,14 +266,12 @@ void gal_select_full_image(AppState *s, int index)
     int limit = s->grid_items ? s->grid_item_count : s->count;
     if (index < 0 || index >= limit)
         return;
-
     s->selected_index = index;
-    s->zoom_level = 1.0f;
-    s->zoom_ui_timer = 0.0f;
-    s->zoom_pan_x = 0.0f;
-    s->zoom_pan_y = 0.0f;
+    s->zoom_level = 1.0F;
+    s->zoom_ui_timer = 0.0F;
+    s->zoom_pan_x = 0.0F;
+    s->zoom_pan_y = 0.0F;
     s->is_panning = 0;
-
     if (s->images)
     {
         int img_idx = (s->grid_items) ? s->grid_items[index].image_index : index;
@@ -279,7 +280,8 @@ void gal_select_full_image(AppState *s, int index)
         ImageEntry *e = &s->images[img_idx];
         if (e->full_width == 0)
         {
-            int w = 0, h = 0;
+            int w = 0;
+            int h = 0;
             if (il_get_image_dimensions(e->path, &w, &h))
             {
                 e->full_width = (uint16_t) w;
@@ -287,7 +289,7 @@ void gal_select_full_image(AppState *s, int index)
             }
         }
 
-        if (e->file_size < 2 * 1024 * 1024)
+        if (e->file_size < (uint64_t)2 * 1024 * 1024)
         {
             s->full_load_timer = 0.0;
             r_load_full_image(s, e->path);
@@ -353,15 +355,16 @@ void gal_render_gallery(HDC hdc, AppState *s)
     GetCursorPos(&pt);
     ScreenToClient(s->hwnd, &pt);
 
-    float thumb_size = 160.0f * s->dpi_scale;
+    float thumb_size = 160.0F * s->dpi_scale;
 
     for (int i = lay.first_visible; i < lay.last_visible; i++)
     {
-        int row = i / lay.cols, col = i % lay.cols;
-        float x = (float) (lay.left_margin + col * lay.pad);
-        float y = (float) (s->layout.topbar_height + s->layout.panel_padding + row * lay.pad - lay.scroll_int);
+        int row = i / lay.cols;
+        int col = i % lay.cols;
+        float x = (float) (lay.left_margin + (col * lay.pad));
+        float y = s->layout.topbar_height + s->layout.panel_padding + (float)(row * lay.pad) - (float)lay.scroll_int;
 
-        if (y + thumb_size < 0 || y > s->window_height)
+        if (y + thumb_size < 0 || y > (float)s->window_height)
             continue;
 
         int hovered = ui_is_hovered(x, y, thumb_size, thumb_size, (float) pt.x, (float) pt.y);
@@ -370,21 +373,30 @@ void gal_render_gallery(HDC hdc, AppState *s)
         int img_idx = s->grid_items ? s->grid_items[i].image_index : i;
 
         // Subtle border behind the card (drawn first so image/panel covers the center)
-        float border_opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.3f);
+        float border_opacity;
+        if (s->selected_index == i) {
+            border_opacity = 0.0F;
+        } else {
+            border_opacity = hovered ? 0.8F : 0.3F;
+        }
 
         if (type == ITEM_FOLDER)
         {
-            border_opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.4f);
+            if (s->selected_index == i) {
+                border_opacity = 0.0F;
+            } else {
+                border_opacity = hovered ? 0.8F : 0.4F;
+            }
 
             // Draw border behind
             instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x - 1.0f * s->dpi_scale;
-            instances[inst_count].y = y - 1.0f * s->dpi_scale;
-            instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
-            instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
+            instances[inst_count].x = x - (1.0F * s->dpi_scale);
+            instances[inst_count].y = y - (1.0F * s->dpi_scale);
+            instances[inst_count].w = thumb_size + (2.0F * s->dpi_scale);
+            instances[inst_count].h = thumb_size + (2.0F * s->dpi_scale);
             instances[inst_count].tex_index = TOKEN_BORDER;
             instances[inst_count].opacity = border_opacity;
-            instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
+            instances[inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
             inst_count++;
 
             // Draw main folder backplate card on top
@@ -394,7 +406,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].w = thumb_size;
             instances[inst_count].h = thumb_size;
             instances[inst_count].tex_index = TOKEN_PANEL;
-            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.75f;
+            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0F : 0.75F;
             instances[inst_count].corner_radius = s->layout.thumb_radius;
             inst_count++;
         }
@@ -411,13 +423,13 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
                 // Draw border behind
                 instances[inst_count] = (InstanceData){0};
-                instances[inst_count].x = x - 1.0f * s->dpi_scale;
-                instances[inst_count].y = y - 1.0f * s->dpi_scale;
-                instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
-                instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
+                instances[inst_count].x = x - (1.0F * s->dpi_scale);
+                instances[inst_count].y = y - (1.0F * s->dpi_scale);
+                instances[inst_count].w = thumb_size + (2.0F * s->dpi_scale);
+                instances[inst_count].h = thumb_size + (2.0F * s->dpi_scale);
                 instances[inst_count].tex_index = TOKEN_BORDER;
                 instances[inst_count].opacity = border_opacity;
-                instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
+                instances[inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
                 inst_count++;
 
                 instances[inst_count] = (InstanceData){0};
@@ -428,7 +440,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 instances[inst_count].tex_index = (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU) ?
                                                       s->images[img_idx].texture_slot :
                                                       TOKEN_DEFAULT;
-                instances[inst_count].opacity = 1.0f;
+                instances[inst_count].opacity = 1.0F;
                 instances[inst_count].corner_radius = s->layout.thumb_radius;
 
                 if (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU && s->images[img_idx].texture_slot != -1)
@@ -448,7 +460,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].w = thumb_size;
             instances[inst_count].h = thumb_size;
             instances[inst_count].tex_index = TOKEN_SELECTION_OUTLINE; // Accent outline token
-            instances[inst_count].opacity = 1.0f;
+            instances[inst_count].opacity = 1.0F;
             instances[inst_count].corner_radius = s->layout.thumb_radius;
             inst_count++;
         }
@@ -461,36 +473,36 @@ void gal_render_gallery(HDC hdc, AppState *s)
     int ms = gal_max_scroll(s);
     if (ms > 0)
     {
-        if (fabsf(s->scroll_target_y - s->scroll_current_y) > 0.5f)
+        if (fabsf(s->scroll_target_y - s->scroll_current_y) > 0.5F)
         {
-            s->scrollbar_fade_timer = 2.0f;
+            s->scrollbar_fade_timer = 2.0F;
         }
 
-        float hit_x = (float) s->window_width - 16.0f * s->dpi_scale;
+        float hit_x = (float) s->window_width - (16.0F * s->dpi_scale);
         int scrollbar_hovered =
-            ui_is_hovered(hit_x, 0.0f, 16.0f * s->dpi_scale, (float) s->window_height, (float) pt.x, (float) pt.y);
+            ui_is_hovered(hit_x, 0.0F, 16.0F * s->dpi_scale, (float) s->window_height, (float) pt.x, (float) pt.y);
         if (scrollbar_hovered)
         {
-            s->scrollbar_fade_timer = 2.0f;
+            s->scrollbar_fade_timer = 2.0F;
         }
 
-        if (s->scrollbar_fade_timer > 0.0f)
+        if (s->scrollbar_fade_timer > 0.0F)
         {
             s->scrollbar_fade_timer -= (float) s->delta_time;
         }
 
-        float target_opacity = (s->scrollbar_fade_timer > 0.0f) ? 1.0f : 0.0f;
-        s->scrollbar_opacity += (target_opacity - s->scrollbar_opacity) * ease_out_factor(10.0f, (float) s->delta_time);
+        float target_opacity = (s->scrollbar_fade_timer > 0.0F) ? 1.0F : 0.0F;
+        s->scrollbar_opacity += (target_opacity - s->scrollbar_opacity) * ease_out_factor(10.0F, (float) s->delta_time);
 
-        float target_hover_t = scrollbar_hovered ? 1.0f : 0.0f;
-        s->scrollbar_hover_t += (target_hover_t - s->scrollbar_hover_t) * ease_out_factor(12.0f, (float) s->delta_time);
+        float target_hover_t = scrollbar_hovered ? 1.0F : 0.0F;
+        s->scrollbar_hover_t += (target_hover_t - s->scrollbar_hover_t) * ease_out_factor(12.0F, (float) s->delta_time);
 
-        if (s->scrollbar_opacity > 0.01f)
+        if (s->scrollbar_opacity > 0.01F)
         {
-            float track_w = lerpf(6.0f, 10.0f, s->scrollbar_hover_t) * s->dpi_scale;
-            float track_x = (float) s->window_width - track_w - 4.0f * s->dpi_scale;
-            float track_y = 8.0f * s->dpi_scale;
-            float track_h = (float) s->window_height - 16.0f * s->dpi_scale;
+            float track_w = lerpf(6.0F, 10.0F, s->scrollbar_hover_t) * s->dpi_scale;
+            float track_x = (float) s->window_width - track_w - (4.0F * s->dpi_scale);
+            float track_y = 8.0F * s->dpi_scale;
+            float track_h = (float) s->window_height - (16.0F * s->dpi_scale);
 
             instances[inst_count] = (InstanceData){0};
             instances[inst_count].x = track_x;
@@ -498,14 +510,14 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].w = track_w;
             instances[inst_count].h = track_h;
             instances[inst_count].tex_index = TOKEN_PANEL;
-            instances[inst_count].opacity = 0.15f * s->scrollbar_opacity;
-            instances[inst_count].corner_radius = track_w * 0.5f;
+            instances[inst_count].opacity = 0.15F * s->scrollbar_opacity;
+            instances[inst_count].corner_radius = track_w * 0.5F;
             inst_count++;
 
-            float thumb_h = (s->window_height / (float) (ms + s->window_height)) * track_h;
-            if (thumb_h < 24.0f * s->dpi_scale)
-                thumb_h = 24.0f * s->dpi_scale;
-            float thumb_y = track_y + (s->scroll_current_y / (float) ms) * (track_h - thumb_h);
+            float thumb_h = ((float) s->window_height / (float) (ms + s->window_height)) * track_h;
+            if (thumb_h < 24.0F * s->dpi_scale)
+                thumb_h = 24.0F * s->dpi_scale;
+            float thumb_y = track_y + ((s->scroll_current_y / (float) ms) * (track_h - thumb_h));
 
             instances[inst_count] = (InstanceData){0};
             instances[inst_count].x = track_x;
@@ -513,42 +525,42 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].w = track_w;
             instances[inst_count].h = thumb_h;
             instances[inst_count].tex_index = TOKEN_SCROLLBAR;
-            instances[inst_count].opacity = s->scrollbar_opacity * (scrollbar_hovered ? 1.0f : 0.7f);
-            instances[inst_count].corner_radius = track_w * 0.5f;
+            instances[inst_count].opacity = s->scrollbar_opacity * (scrollbar_hovered ? 1.0F : 0.7F);
+            instances[inst_count].corner_radius = track_w * 0.5F;
             inst_count++;
         }
     }
 
     // Top Bar Backdrop (drawn after grid items to mask scrolled overflow)
     instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0f;
-    instances[inst_count].y = 0.0f;
+    instances[inst_count].x = 0.0F;
+    instances[inst_count].y = 0.0F;
     instances[inst_count].w = (float) s->window_width;
     instances[inst_count].h = s->layout.topbar_height;
     instances[inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
-    instances[inst_count].opacity = 1.0f;
-    instances[inst_count].corner_radius = 0.0f;
+    instances[inst_count].opacity = 1.0F;
+    instances[inst_count].corner_radius = 0.0F;
     inst_count++;
 
     // Top Bar Bottom Border
     instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0f;
-    instances[inst_count].y = s->layout.topbar_height - 1.0f * s->dpi_scale;
+    instances[inst_count].x = 0.0F;
+    instances[inst_count].y = s->layout.topbar_height - (1.0F * s->dpi_scale);
     instances[inst_count].w = (float) s->window_width;
-    instances[inst_count].h = 1.0f * s->dpi_scale;
+    instances[inst_count].h = 1.0F * s->dpi_scale;
     instances[inst_count].tex_index = TOKEN_BORDER; // One Dark border color
-    instances[inst_count].opacity = 1.0f;
-    instances[inst_count].corner_radius = 0.0f;
+    instances[inst_count].opacity = 1.0F;
+    instances[inst_count].corner_radius = 0.0F;
     inst_count++;
 
     // Sort Button & Dropdown Layout (compact position vertically centered in topbar)
     int btn_w = (int) (90 * s->dpi_scale);
     int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) (s->window_width - btn_w - 16 * s->dpi_scale);
-    int btn_y = (int) ((s->layout.topbar_height - btn_h) / 2.0f);
+    int btn_x = (int) ((float)s->window_width - (float)btn_w - (16.0F * s->dpi_scale));
+    int btn_y = (int) ((s->layout.topbar_height - (float)btn_h) / 2.0F);
 
-    ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0f, (float) pt.x,
-              (float) pt.y, 4.0f * s->dpi_scale);
+    ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0F, (float) pt.x,
+              (float) pt.y, 4.0F * s->dpi_scale);
 
     // Draw the main gallery, topbar, and button first
     r_draw_instances(s, instances, inst_count);
@@ -563,7 +575,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
         int menu_x = btn_x + btn_w - menu_w;
         int menu_y = btn_y + btn_h + (int) (5 * s->dpi_scale);
 
-        ui_blur_panel(instances, &inst_count, (float) menu_x, (float) menu_y, (float) menu_w, (float) menu_h, 0.92f, 1,
+        ui_blur_panel(instances, &inst_count, (float) menu_x, (float) menu_y, (float) menu_w, (float) menu_h, 0.92F, 1,
                       s->layout.card_radius);
         r_draw_instances(s, instances, inst_count);
     }
@@ -575,11 +587,12 @@ void gal_render_gallery(HDC hdc, AppState *s)
         {
             if (s->grid_items[i].type == ITEM_FOLDER)
             {
-                int row = i / lay.cols, col = i % lay.cols;
-                float x = (float) (lay.left_margin + col * lay.pad);
-                float y = (float) (s->layout.topbar_height + s->layout.panel_padding + row * lay.pad - lay.scroll_int);
+                int row = i / lay.cols;
+                int col = i % lay.cols;
+                float x = (float) (lay.left_margin + (col * lay.pad));
+                float y = s->layout.topbar_height + s->layout.panel_padding + (float)(row * lay.pad) - (float)lay.scroll_int;
 
-                if (y + thumb_size < 0 || y > s->window_height)
+                if (y + thumb_size < 0 || y > (float)s->window_height)
                     continue;
 
                 int show_counts = (_wcsicmp(s->grid_items[i].folder_name, L"..") != 0 &&
@@ -587,9 +600,9 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
                 // 1. Draw folder icon (top-left, small 24dp size)
                 const wchar_t *icon = (_wcsicmp(s->grid_items[i].folder_name, L"..") == 0) ? L"\uEB52" : L"\uE8B7";
-                float icon_x = x + 16.0f * s->dpi_scale;
-                float icon_y = y + 16.0f * s->dpi_scale;
-                float icon_size = 24.0f * s->dpi_scale;
+                float icon_x = x + (16.0F * s->dpi_scale);
+                float icon_y = y + (16.0F * s->dpi_scale);
+                float icon_size = 24.0F * s->dpi_scale;
                 r_draw_text_aligned(s, icon, icon_x, icon_y, icon_size, icon_size, ALIGN_X_LEFT, ALIGN_Y_CENTER,
                                     s->dwrite_format_icons, s->theme.accent);
 
@@ -599,20 +612,20 @@ void gal_render_gallery(HDC hdc, AppState *s)
                     wchar_t count_buf[128];
                     format_folder_contents(s->grid_items[i].image_count, s->grid_items[i].folder_count, count_buf, 128);
 
-                    float count_x = x + 16.0f * s->dpi_scale;
-                    float count_y = y + thumb_size - 30.0f * s->dpi_scale;
-                    float count_w = thumb_size - 32.0f * s->dpi_scale;
-                    float count_h = 14.0f * s->dpi_scale;
+                    float count_x = x + (16.0F * s->dpi_scale);
+                    float count_y = y + thumb_size - (30.0F * s->dpi_scale);
+                    float count_w = thumb_size - (32.0F * s->dpi_scale);
+                    float count_h = 14.0F * s->dpi_scale;
 
                     r_draw_text_aligned(s, count_buf, count_x, count_y, count_w, count_h, ALIGN_X_LEFT,
                                         ALIGN_Y_BOTTOM, s->dwrite_format_mono_small, s->theme.text_muted);
                 }
 
                 // 3. Draw folder name (in the middle, left-aligned)
-                float name_x = x + 16.0f * s->dpi_scale;
-                float name_y = y + 52.0f * s->dpi_scale;
-                float name_w = thumb_size - 32.0f * s->dpi_scale;
-                float name_h = 44.0f * s->dpi_scale; // wrapping space
+                float name_x = x + (16.0F * s->dpi_scale);
+                float name_y = y + (52.0F * s->dpi_scale);
+                float name_w = thumb_size - (32.0F * s->dpi_scale);
+                float name_h = 44.0F * s->dpi_scale; // wrapping space
                 r_draw_text_aligned(s, s->grid_items[i].folder_name, name_x, name_y, name_w, name_h, ALIGN_X_LEFT,
                                     ALIGN_Y_TOP, s->dwrite_format_semibold, s->theme.text_main);
             }
@@ -620,9 +633,9 @@ void gal_render_gallery(HDC hdc, AppState *s)
     }
 
     // Render breadcrumb / viewing path in D2D pass (memoized to avoid per-frame COM overhead)
-    float text_x = 16.0f * s->dpi_scale;
-    float text_h = 16.0f * s->dpi_scale;
-    float text_y = (s->layout.topbar_height - text_h) / 2.0f; // vertically centered
+    float text_x = 16.0F * s->dpi_scale;
+    float text_h = 16.0F * s->dpi_scale;
+    float text_y = (s->layout.topbar_height - text_h) / 2.0F; // vertically centered
 
     wchar_t temp_dir[MAX_PATH_LEN];
     wcsncpy(temp_dir, s->viewing_dir, MAX_PATH_LEN - 1);
@@ -648,17 +661,17 @@ void gal_render_gallery(HDC hdc, AppState *s)
     }
 
     static wchar_t cached_dir[MAX_PATH_LEN] = {0};
-    static float cached_parent_w = 0.0f;
-    static float cached_dpi = 0.0f;
+    static float cached_parent_w = 0.0F;
+    static float cached_dpi = 0.0F;
 
     if (wcscmp(cached_dir, s->viewing_dir) != 0 || cached_dpi != s->dpi_scale)
     {
         wcsncpy(cached_dir, s->viewing_dir, MAX_PATH_LEN - 1);
         cached_dpi = s->dpi_scale;
 
-        wchar_t parent_formatted[MAX_PATH_LEN * 2] = {0};
+        wchar_t parent_formatted[(MAX_PATH_LEN * 2)] = {0};
         int pf_idx = 0;
-        for (int p = 0; parent_path[p] != L'\0' && pf_idx < MAX_PATH_LEN * 2 - 10; p++)
+        for (int p = 0; parent_path[p] != L'\0' && pf_idx < (MAX_PATH_LEN * 2) - 10; p++)
         {
             if (parent_path[p] == L'\\')
             {
@@ -672,18 +685,18 @@ void gal_render_gallery(HDC hdc, AppState *s)
         }
         parent_formatted[pf_idx] = L'\0';
 
-        wchar_t display_parent[MAX_PATH_LEN * 2 + 32] = {0};
+        wchar_t display_parent[(MAX_PATH_LEN * 2) + 32] = {0};
         if (parent_path[0] != L'\0')
         {
-            swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / %ls / ", parent_formatted);
+            swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / %ls / ", parent_formatted);
         }
         else
         {
-            swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / ");
+            swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / ");
         }
 
         // DWrite GetMetrics workaround: append a dummy character 'x' to measure trailing space width
-        wchar_t measure_buf[MAX_PATH_LEN * 2 + 64];
+        wchar_t measure_buf[(MAX_PATH_LEN * 2) + 64];
         swprintf(measure_buf, sizeof(measure_buf) / sizeof(wchar_t), L"%lsx", display_parent);
         
         float total_w = r_measure_text_width(s, measure_buf, s->dwrite_format_small);
@@ -692,9 +705,9 @@ void gal_render_gallery(HDC hdc, AppState *s)
     }
 
     // Format display_parent for drawing
-    wchar_t parent_formatted[MAX_PATH_LEN * 2] = {0};
+    wchar_t parent_formatted[(MAX_PATH_LEN * 2)] = {0};
     int pf_idx = 0;
-    for (int p = 0; parent_path[p] != L'\0' && pf_idx < MAX_PATH_LEN * 2 - 10; p++)
+    for (int p = 0; parent_path[p] != L'\0' && pf_idx < (MAX_PATH_LEN * 2) - 10; p++)
     {
         if (parent_path[p] == L'\\')
         {
@@ -708,23 +721,23 @@ void gal_render_gallery(HDC hdc, AppState *s)
     }
     parent_formatted[pf_idx] = L'\0';
 
-    wchar_t display_parent[MAX_PATH_LEN * 2 + 32] = {0};
+    wchar_t display_parent[(MAX_PATH_LEN * 2) + 32] = {0};
     if (parent_path[0] != L'\0')
     {
-        swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / %ls / ", parent_formatted);
+        swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / %ls / ", parent_formatted);
     }
     else
     {
-        swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / ");
+        swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / ");
     }
 
     // Draw parent path segment in muted color using system small font
-    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0f, text_h,
+    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0F, text_h,
                         ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_muted);
 
     // Draw active folder name in main color
-    float child_max_w = (float) btn_x - text_x - cached_parent_w - 10.0f;
-    if (child_max_w > 10.0f)
+    float child_max_w = (float) btn_x - text_x - cached_parent_w - 10.0F;
+    if (child_max_w > 10.0F)
     {
         r_draw_text_aligned(s, child_dir, text_x + cached_parent_w, text_y, child_max_w, text_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_main);
@@ -744,11 +757,11 @@ void gal_render_gallery(HDC hdc, AppState *s)
                                  !s->sort_descending ? L"\x2713 Ascending" : L"  Ascending",
                                  s->sort_descending ? L"\x2713 Descending" : L"  Descending"};
 
-        float option_h = 30.0f * s->dpi_scale;
+        float option_h = 30.0F * s->dpi_scale;
         for (int i = 0; i < 5; i++)
         {
-            r_draw_text_ext(s, opts[i], (float) (menu_x + 12 * s->dpi_scale),
-                            (float) (menu_y + 5 * s->dpi_scale + i * option_h), (float) menu_w, option_h,
+            r_draw_text_ext(s, opts[i], (float)menu_x + (12.0F * s->dpi_scale),
+                            (float)menu_y + (5.0F * s->dpi_scale) + ((float)i * option_h), (float) menu_w, option_h,
                             s->dwrite_format_regular, s->theme.text_main);
         }
     }
@@ -767,7 +780,7 @@ void gal_close_full(AppState *s)
 void gal_render_fullimage(HDC hdc, AppState *s)
 {
     (void) hdc;                      // Unused parameter
-    r_clear(s, 0.118f, 0.133f, 0.153f); // Solid dark One Dark variant background
+    r_clear(s, 0.118F, 0.133F, 0.153F); // Solid dark One Dark variant background
 
     int total_items = s->grid_items ? s->grid_item_count : s->count;
     if (total_items == 0 || s->selected_index < 0 || s->selected_index >= total_items)
@@ -789,13 +802,13 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         if (r_load_full_image(s, s->images[active_img_idx].path))
         {
             // Preload ALL visible images in the bottom strip in memory parallelly (staggered, 1 per frame)
-            float main_w = (float) s->window_width - 40.0f * s->dpi_scale;
-            float avail_w = main_w - 100.0f * s->dpi_scale;
+            float main_w = (float) s->window_width - (40.0F * s->dpi_scale);
+            float avail_w = main_w - (100.0F * s->dpi_scale);
             int thumb_w = (int) (80 * s->dpi_scale);
             int thumb_pad = (int) (10 * s->dpi_scale);
             int col_w = thumb_w + thumb_pad;
 
-            int num_strip_thumbs = (int) (avail_w / col_w);
+            int num_strip_thumbs = (int) (avail_w / (float) col_w);
             if (num_strip_thumbs < 1)
                 num_strip_thumbs = 1;
 
@@ -877,10 +890,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     int inst_count = 0;
 
     // --- 1. Main Image Area ---
-    float main_x = 20.0f * s->dpi_scale;
-    float main_y = s->layout.topbar_height + 20.0f * s->dpi_scale;
-    float main_w = (float) s->window_width - 40.0f * s->dpi_scale;
-    float main_h = (float) s->window_height - (s->layout.topbar_height + 160.0f * s->dpi_scale);
+    float main_x = 20.0F * s->dpi_scale;
+    float main_y = s->layout.topbar_height + (20.0F * s->dpi_scale);
+    float main_w = (float) s->window_width - (40.0F * s->dpi_scale);
+    float main_h = (float) s->window_height - (s->layout.topbar_height + (160.0F * s->dpi_scale));
 
     if (main_w > 0 && main_h > 0)
     {
@@ -893,8 +906,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             float scale = main_w / img_w < main_h / img_h ? main_w / img_w : main_h / img_h;
             float display_w = img_w * scale * s->zoom_level;
             float display_h = img_h * scale * s->zoom_level;
-            float display_x = main_x + (main_w - display_w) / 2.0f + s->zoom_pan_x;
-            float display_y = main_y + (main_h - display_h) / 2.0f + s->zoom_pan_y;
+            float display_x = main_x + ((main_w - display_w) / 2.0F) + s->zoom_pan_x;
+            float display_y = main_y + ((main_h - display_h) / 2.0F) + s->zoom_pan_y;
 
             // Draw full high-resolution image!
             instances[inst_count] = (InstanceData){0};
@@ -903,8 +916,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].w = display_w;
             instances[inst_count].h = display_h;
             instances[inst_count].tex_index = TOKEN_FULL_IMAGE; // Samples from register(t1)
-            instances[inst_count].opacity = 1.0f;
-            instances[inst_count].corner_radius = 4.0f * s->dpi_scale;
+            instances[inst_count].opacity = 1.0F;
+            instances[inst_count].corner_radius = 4.0F * s->dpi_scale;
             inst_count++;
 
             // Ensure active_full_srv matches the geometry we just submitted
@@ -918,59 +931,59 @@ void gal_render_fullimage(HDC hdc, AppState *s)
 
     // Solid top letterbox panel mask (masks zoomed overflow behind top controls)
     instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0f;
-    instances[inst_count].y = 0.0f;
+    instances[inst_count].x = 0.0F;
+    instances[inst_count].y = 0.0F;
     instances[inst_count].w = (float) s->window_width;
-    instances[inst_count].h = s->layout.topbar_height + 20.0f * s->dpi_scale;
+    instances[inst_count].h = s->layout.topbar_height + (20.0F * s->dpi_scale);
     instances[inst_count].tex_index = TOKEN_PANEL; // Solid dark gray backplate
-    instances[inst_count].opacity = 1.0f;
+    instances[inst_count].opacity = 1.0F;
     inst_count++;
 
     // --- 2. Back Button ---
-    ui_button(instances, &inst_count, 20.0f * s->dpi_scale, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale,
-              30.0f * s->dpi_scale, 0.8f, (float) pt.x, (float) pt.y, 6.0f * s->dpi_scale);
+    ui_button(instances, &inst_count, 20.0F * s->dpi_scale, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale,
+              30.0F * s->dpi_scale, 0.8F, (float) pt.x, (float) pt.y, 6.0F * s->dpi_scale);
 
     // --- 3. Info Button ---
-    float info_btn_x = (float) s->window_width - 100.0f * s->dpi_scale;
-    ui_badge(instances, &inst_count, info_btn_x, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale, 0.8f,
-             s->info_open, (float) pt.x, (float) pt.y, 6.0f * s->dpi_scale);
+    float info_btn_x = (float) s->window_width - (100.0F * s->dpi_scale);
+    ui_badge(instances, &inst_count, info_btn_x, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale, 30.0F * s->dpi_scale, 0.8F,
+             s->info_open, (float) pt.x, (float) pt.y, 6.0F * s->dpi_scale);
 
     // --- 3.5 Zoom Level Badge UI ---
-    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f)
+    if (s->zoom_ui_timer > 0.0F && s->zoom_level > 1.0F)
     {
-        float cx = (float) s->window_width / 2.0f;
-        float bx = cx - 60.0f * s->dpi_scale;
-        float by = 20.0f * s->dpi_scale;
-        float bw = 120.0f * s->dpi_scale;
-        float bh = 30.0f * s->dpi_scale;
-        int hovered = (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh);
-        ui_badge(instances, &inst_count, bx, by, bw, bh, 0.8f, hovered, (float) pt.x, (float) pt.y,
-                 6.0f * s->dpi_scale);
+        float cx = (float) s->window_width / 2.0F;
+        float bx = cx - (60.0F * s->dpi_scale);
+        float by = 20.0F * s->dpi_scale;
+        float bw = 120.0F * s->dpi_scale;
+        float bh = 30.0F * s->dpi_scale;
+        int hovered = ((float)pt.x >= bx && (float)pt.x <= bx + bw && (float)pt.y >= by && (float)pt.y <= by + bh);
+        ui_badge(instances, &inst_count, bx, by, bw, bh, 0.8F, hovered, (float) pt.x, (float) pt.y,
+                 6.0F * s->dpi_scale);
     }
 
     // --- 4. Bottom Strip ---
-    float strip_y = (float) s->window_height - 130.0f * s->dpi_scale;
+    float strip_y = (float) s->window_height - (130.0F * s->dpi_scale);
 
     // Solid bottom strip panel backplate (masks zoomed overflow)
     instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0f;
+    instances[inst_count].x = 0.0F;
     instances[inst_count].y = strip_y;
     instances[inst_count].w = (float) s->window_width;
-    instances[inst_count].h = 130.0f * s->dpi_scale;
+    instances[inst_count].h = 130.0F * s->dpi_scale;
     instances[inst_count].tex_index = TOKEN_PANEL; // Gray backplate
-    instances[inst_count].opacity = 1.0f;          // Fully solid
+    instances[inst_count].opacity = 1.0F;          // Fully solid
     inst_count++;
 
     // Previous Arrow <
-    ui_button(instances, &inst_count, 20.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale, 30.0f * s->dpi_scale,
-              30.0f * s->dpi_scale, 0.8f, (float) pt.x, (float) pt.y, 15.0f * s->dpi_scale);
+    ui_button(instances, &inst_count, 20.0F * s->dpi_scale, strip_y + (35.0F * s->dpi_scale), 30.0F * s->dpi_scale,
+              30.0F * s->dpi_scale, 0.8F, (float) pt.x, (float) pt.y, 15.0F * s->dpi_scale);
 
     // Next Arrow >
-    ui_button(instances, &inst_count, (float) s->window_width - 50.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale,
-              30.0f * s->dpi_scale, 30.0f * s->dpi_scale, 0.8f, (float) pt.x, (float) pt.y, 15.0f * s->dpi_scale);
+    ui_button(instances, &inst_count, (float) s->window_width - (50.0F * s->dpi_scale), strip_y + (35.0F * s->dpi_scale),
+              30.0F * s->dpi_scale, 30.0F * s->dpi_scale, 0.8F, (float) pt.x, (float) pt.y, 15.0F * s->dpi_scale);
 
     // Bottom strip thumbnails window centered around s->selected_index
-    float avail_w = (float) s->window_width - 140.0f * s->dpi_scale; // Width between arrows
+    float avail_w = (float) s->window_width - (140.0F * s->dpi_scale); // Width between arrows
     int thumb_w = (int) (80 * s->dpi_scale);
     int thumb_h = (int) (80 * s->dpi_scale);
     int thumb_pad = (int) (10 * s->dpi_scale);
@@ -1001,7 +1014,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
 
     if (total_images > 0 && active_img_idx_in_strip != -1)
     {
-        int num_strip_thumbs = (int) (avail_w / col_w);
+        int num_strip_thumbs = (int) (avail_w / (float)col_w);
         if (num_strip_thumbs < 1)
             num_strip_thumbs = 1;
         if (num_strip_thumbs > total_images)
@@ -1020,8 +1033,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
                 start_idx = 0;
         }
 
-        float total_thumbs_w = (float) (num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
-        float thumbs_start_x = 55.0f * s->dpi_scale + (avail_w - total_thumbs_w) / 2.0f;
+        float total_thumbs_w = (float) ((num_strip_thumbs * thumb_w) + ((num_strip_thumbs - 1) * thumb_pad));
+        float thumbs_start_x = (55.0F * s->dpi_scale) + ((avail_w - total_thumbs_w) / 2.0F);
 
         for (int k = start_idx; k <= end_idx; k++)
         {
@@ -1031,10 +1044,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
                 continue;
 
             float tx = thumbs_start_x + (float) ((k - start_idx) * col_w);
-            float ty = strip_y + 10.0f * s->dpi_scale;
+            float ty = strip_y + (10.0F * s->dpi_scale);
 
             // Lazy load strip thumbnails
-            if (s->images[img_idx].texture_slot == -1 && !s->images[img_idx].thumb_requested)
+            if (s->images != NULL && s->images[img_idx].texture_slot == -1 && !s->images[img_idx].thumb_requested)
             {
                 s->images[img_idx].thumb_requested = 1;
                 aw_request_thumbnail(s, s->images[img_idx].path, THUMB_SIZE, s->hwnd);
@@ -1044,13 +1057,13 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             if (i == s->selected_index)
             {
                 instances[inst_count] = (InstanceData){0};
-                instances[inst_count].x = tx - 4.0f * s->dpi_scale;
-                instances[inst_count].y = ty - 4.0f * s->dpi_scale;
-                instances[inst_count].w = (float) (thumb_w + 8.0f * s->dpi_scale);
-                instances[inst_count].h = (float) (thumb_h + 8.0f * s->dpi_scale);
+                instances[inst_count].x = tx - (4.0F * s->dpi_scale);
+                instances[inst_count].y = ty - (4.0F * s->dpi_scale);
+                instances[inst_count].w = (float)thumb_w + (8.0F * s->dpi_scale);
+                instances[inst_count].h = (float)thumb_h + (8.0F * s->dpi_scale);
                 instances[inst_count].tex_index = TOKEN_ACCENT; // Accent border
-                instances[inst_count].opacity = 1.0f;
-                instances[inst_count].corner_radius = 8.0f * s->dpi_scale;
+                instances[inst_count].opacity = 1.0F;
+                instances[inst_count].corner_radius = 8.0F * s->dpi_scale;
                 inst_count++;
             }
 
@@ -1061,8 +1074,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].w = (float) thumb_w;
             instances[inst_count].h = (float) thumb_h;
             instances[inst_count].tex_index = s->images[img_idx].texture_slot;
-            instances[inst_count].opacity = 1.0f;
-            instances[inst_count].corner_radius = 6.0f * s->dpi_scale;
+            instances[inst_count].opacity = 1.0F;
+            instances[inst_count].corner_radius = 6.0F * s->dpi_scale;
 
             if (s->images[img_idx].texture_slot != -1)
             {
@@ -1073,10 +1086,10 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     }
 
     // --- 5. Info Overlay Box ---
-    float info_x = (float) s->window_width - 320.0f * s->dpi_scale;
-    float info_y = s->layout.topbar_height + 25.0f * s->dpi_scale;
-    float info_w = 300.0f * s->dpi_scale;
-    float info_h = 240.0f * s->dpi_scale;
+    float info_x = (float) s->window_width - (320.0F * s->dpi_scale);
+    float info_y = s->layout.topbar_height + (25.0F * s->dpi_scale);
+    float info_w = 300.0F * s->dpi_scale;
+    float info_h = 240.0F * s->dpi_scale;
 
     // Draw all background elements first
     r_draw_instances(s, instances, inst_count);
@@ -1085,15 +1098,15 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     if (s->info_open)
     {
         r_copy_backbuffer_for_blur(s);
-        ui_blur_panel(instances, &inst_count, info_x, info_y, info_w, info_h, 0.92f, 1, s->layout.card_radius);
+        ui_blur_panel(instances, &inst_count, info_x, info_y, info_w, info_h, 0.92F, 1, s->layout.card_radius);
 
         // Circular close button in top right of info card
-        float close_w = 20.0f * s->dpi_scale;
-        float close_h = 20.0f * s->dpi_scale;
-        float close_x = info_x + info_w - close_w - 10.0f * s->dpi_scale;
-        float close_y = info_y + 10.0f * s->dpi_scale;
-        ui_button(instances, &inst_count, close_x, close_y, close_w, close_h, 0.6f, (float) pt.x, (float) pt.y,
-                  close_w * 0.5f);
+        float close_w = 20.0F * s->dpi_scale;
+        float close_h = 20.0F * s->dpi_scale;
+        float close_x = info_x + info_w - close_w - (10.0F * s->dpi_scale);
+        float close_y = info_y + (10.0F * s->dpi_scale);
+        ui_button(instances, &inst_count, close_x, close_y, close_w, close_h, 0.6F, (float) pt.x, (float) pt.y,
+                  close_w * 0.5F);
 
         // Draw the info panel overlay elements
         r_draw_instances(s, instances, inst_count);
@@ -1104,24 +1117,24 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     r_draw_instances(s, instances, inst_count);
 
     // Draw Back and Info Button text
-    r_draw_text_aligned(s, L"\uE72B", 20.0f * s->dpi_scale, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale,
-                        30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons,
+    r_draw_text_aligned(s, L"\uE72B", 20.0F * s->dpi_scale, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale,
+                        30.0F * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons,
                         s->theme.text_main);
-    r_draw_text_aligned(s, L"\uE946", info_btn_x, 20.0f * s->dpi_scale, 80.0f * s->dpi_scale, 30.0f * s->dpi_scale,
+    r_draw_text_aligned(s, L"\uE946", info_btn_x, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale, 30.0F * s->dpi_scale,
                         ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
 
     // Draw Zoom Level badge text if active
-    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f)
+    if (s->zoom_ui_timer > 0.0F && s->zoom_level > 1.0F)
     {
-        float cx = (float) s->window_width / 2.0f;
-        float bx = cx - 60.0f * s->dpi_scale;
-        float by = 20.0f * s->dpi_scale;
-        float bw = 120.0f * s->dpi_scale;
-        float bh = 30.0f * s->dpi_scale;
+        float cx = (float) s->window_width / 2.0F;
+        float bx = cx - (60.0F * s->dpi_scale);
+        float by = 20.0F * s->dpi_scale;
+        float bw = 120.0F * s->dpi_scale;
+        float bh = 30.0F * s->dpi_scale;
         POINT m_pt;
         GetCursorPos(&m_pt);
         ScreenToClient(s->hwnd, &m_pt);
-        int hovered = (m_pt.x >= bx && m_pt.x <= bx + bw && m_pt.y >= by && m_pt.y <= by + bh);
+        int hovered = ((float)m_pt.x >= bx && (float)m_pt.x <= bx + bw && (float)m_pt.y >= by && (float)m_pt.y <= by + bh);
         wchar_t zoom_text[64];
         if (hovered)
         {
@@ -1129,17 +1142,17 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         }
         else
         {
-            swprintf(zoom_text, 64, L"Zoom: %.0f%%", s->zoom_level * 100.0f);
+            swprintf(zoom_text, 64, L"Zoom: %.0f%%", s->zoom_level * 100.0F);
         }
         ui_badge_text(s, zoom_text, bx, by, bw, bh);
     }
 
     // Draw previous/next strip buttons
-    r_draw_text_aligned(s, L"\uE76B", 20.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale, 30.0f * s->dpi_scale,
-                        30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons,
+    r_draw_text_aligned(s, L"\uE76B", 20.0F * s->dpi_scale, strip_y + (35.0F * s->dpi_scale), 30.0F * s->dpi_scale,
+                        30.0F * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons,
                         s->theme.text_main);
-    r_draw_text_aligned(s, L"\uE76C", (float) s->window_width - 50.0f * s->dpi_scale, strip_y + 35.0f * s->dpi_scale,
-                        30.0f * s->dpi_scale, 30.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER,
+    r_draw_text_aligned(s, L"\uE76C", (float) s->window_width - (50.0F * s->dpi_scale), strip_y + (35.0F * s->dpi_scale),
+                        30.0F * s->dpi_scale, 30.0F * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER,
                         s->dwrite_format_icons, s->theme.text_main);
 
     // Draw Metadata Card details
@@ -1148,7 +1161,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         ImageEntry *e = &s->images[active_img_idx];
         if (e->full_width == 0)
         {
-            int w = 0, h = 0;
+            int w = 0;
+            int h = 0;
             if (il_get_image_dimensions(e->path, &w, &h))
             {
                 e->full_width = (uint16_t) w;
@@ -1207,43 +1221,43 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         }
 
         // Draw close button close icon text
-        float close_w = 20.0f * s->dpi_scale;
-        float close_h = 20.0f * s->dpi_scale;
-        float close_x = info_x + info_w - close_w - 10.0f * s->dpi_scale;
-        float close_y = info_y + 10.0f * s->dpi_scale;
+        float close_w = 20.0F * s->dpi_scale;
+        float close_h = 20.0F * s->dpi_scale;
+        float close_x = info_x + info_w - close_w - (10.0F * s->dpi_scale);
+        float close_y = info_y + (10.0F * s->dpi_scale);
         r_draw_text_aligned(s, L"\uE711", close_x, close_y, close_w, close_h, ALIGN_X_CENTER, ALIGN_Y_CENTER,
                             s->dwrite_format_icons, s->theme.text_main);
 
-        float pad = 15.0f * s->dpi_scale;
-        float item_h = 24.0f * s->dpi_scale;
+        float pad = 15.0F * s->dpi_scale;
+        float item_h = 24.0F * s->dpi_scale;
 
         // Render line items beautiful Segoe UI Variable text
-        r_draw_text_aligned(s, L"IMAGE METADATA", info_x + pad, info_y + pad, info_w - pad * 2.0f, item_h, ALIGN_X_LEFT,
+        r_draw_text_aligned(s, L"IMAGE METADATA", info_x + pad, info_y + pad, info_w - (pad * 2.0F), item_h, ALIGN_X_LEFT,
                             ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
 
         wchar_t line[256];
         swprintf(line, 256, L"Name:  %ls", name_trunc);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 1.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 1.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Path:  %ls", path_trunc);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 2.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 2.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Size:  %ls", sz_buf);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 3.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 3.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Dims:  %ls", dim_buf);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 4.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 4.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Created:  %ls", tc_buf);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 5.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 5.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Modified: %ls", tm_buf);
-        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 6.2f, info_w - pad * 2.0f, item_h,
+        r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 6.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
     }
 
@@ -1256,17 +1270,17 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     if (s->view_mode != VIEW_FULLIMAGE)
         return 0;
 
-    float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
+    float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
 
     // --- 1. Hit test back button ---
-    if (x >= 20 * dpi && x <= 100 * dpi && y >= 20 * dpi && y <= 50 * dpi)
+    if ((float)x >= 20.0F * dpi && (float)x <= 100.0F * dpi && (float)y >= 20.0F * dpi && (float)y <= 50.0F * dpi)
     {
         gal_close_full(s);
         return 1;
     }
 
     // --- 2. Hit test info button ---
-    if (x >= s->window_width - 100 * dpi && x <= s->window_width - 20 * dpi && y >= 20 * dpi && y <= 50 * dpi)
+    if ((float)x >= (float)s->window_width - (100.0F * dpi) && (float)x <= (float)s->window_width - (20.0F * dpi) && (float)y >= 20.0F * dpi && (float)y <= 50.0F * dpi)
     {
         s->info_open = !s->info_open;
         s->needs_redraw = 1;
@@ -1274,36 +1288,36 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     }
 
     // --- 2.5 Zoom badge hit test ---
-    if (s->zoom_ui_timer > 0.0f && s->zoom_level > 1.0f)
+    if (s->zoom_ui_timer > 0.0F && s->zoom_level > 1.0F)
     {
-        float cx = (float) s->window_width / 2.0f;
-        float bx = cx - 60.0f * dpi;
-        float by = 20.0f * dpi;
-        float bw = 120.0f * dpi;
-        float bh = 30.0f * dpi;
-        if (x >= bx && x <= bx + bw && y >= by && y <= by + bh)
+        float cx = (float) s->window_width / 2.0F;
+        float bx = cx - (60.0F * dpi);
+        float by = 20.0F * dpi;
+        float bw = 120.0F * dpi;
+        float bh = 30.0F * dpi;
+        if ((float)x >= bx && (float)x <= bx + bw && (float)y >= by && (float)y <= by + bh)
         {
-            s->zoom_level = 1.0f;
-            s->zoom_ui_timer = 0.0f;
+            s->zoom_level = 1.0F;
+            s->zoom_ui_timer = 0.0F;
             gal_clamp_zoom_pan(s);
             s->needs_redraw = 1;
             return 1;
         }
     }
 
-    float info_x = (float) s->window_width - 320.0f * dpi;
-    float info_y = s->layout.topbar_height + 25.0f * dpi;
-    float info_w = 300.0f * dpi;
-    float info_h = 240.0f * dpi;
+    float info_x = (float) s->window_width - (320.0F * dpi);
+    float info_y = s->layout.topbar_height + (25.0F * dpi);
+    float info_w = 300.0F * dpi;
+    float info_h = 240.0F * dpi;
 
     // --- 2.6 Hit test metadata close button ---
     if (s->info_open)
     {
-        float close_w = 20.0f * dpi;
-        float close_h = 20.0f * dpi;
-        float close_x = info_x + info_w - close_w - 10.0f * dpi;
-        float close_y = info_y + 10.0f * dpi;
-        if (x >= close_x && x <= close_x + close_w && y >= close_y && y <= close_y + close_h)
+        float close_w = 20.0F * dpi;
+        float close_h = 20.0F * dpi;
+        float close_x = info_x + info_w - close_w - (10.0F * dpi);
+        float close_y = info_y + (10.0F * dpi);
+        if ((float)x >= close_x && (float)x <= close_x + close_w && (float)y >= close_y && (float)y <= close_y + close_h)
         {
             s->info_open = 0;
             s->needs_redraw = 1;
@@ -1315,7 +1329,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     int closed_info = 0;
     if (s->info_open)
     {
-        if (x >= info_x && x <= info_x + info_w && y >= info_y && y <= info_y + info_h)
+        if ((float)x >= info_x && (float)x <= info_x + info_w && (float)y >= info_y && (float)y <= info_y + info_h)
         {
             return 1; // Click inside info box -> consume click
         }
@@ -1326,10 +1340,10 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     }
 
     // --- 4. Bottom Navigation Strip ---
-    float strip_y = (float) s->window_height - 130.0f * dpi;
-    float strip_h = 130.0f * dpi;
+    float strip_y = (float) s->window_height - (130.0F * dpi);
+    float strip_h = 130.0F * dpi;
 
-    if (y >= strip_y && y <= strip_y + strip_h)
+    if ((float)y >= strip_y && (float)y <= strip_y + strip_h)
     {
         int active_img_idx_in_strip = -1;
         int total_images = 0;
@@ -1353,7 +1367,7 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         }
 
         // Prev Arrow circular button hit test
-        if (x >= 20 * dpi && x <= 50 * dpi && y >= strip_y + 35.0f * dpi && y <= strip_y + 65.0f * dpi)
+        if ((float)x >= 20.0F * dpi && (float)x <= 50.0F * dpi && (float)y >= strip_y + (35.0F * dpi) && (float)y <= strip_y + (65.0F * dpi))
         {
             if (active_img_idx_in_strip > 0)
             {
@@ -1366,8 +1380,8 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         }
 
         // Next Arrow circular button hit test
-        if (x >= s->window_width - 50 * dpi && x <= s->window_width - 20 * dpi && y >= strip_y + 35.0f * dpi &&
-            y <= strip_y + 65.0f * dpi)
+        if ((float)x >= (float)s->window_width - (50.0F * dpi) && (float)x <= (float)s->window_width - (20.0F * dpi) && (float)y >= strip_y + (35.0F * dpi) &&
+            (float)y <= strip_y + (65.0F * dpi))
         {
             if (active_img_idx_in_strip >= 0 && active_img_idx_in_strip < total_images - 1)
             {
@@ -1380,14 +1394,14 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         }
 
         // Individual thumbnail hit testing in the strip
-        float avail_w = (float) s->window_width - 140.0f * dpi;
+        float avail_w = (float) s->window_width - (140.0F * dpi);
         int thumb_w = (int) (80 * dpi);
         int thumb_pad = (int) (10 * dpi);
         int col_w = thumb_w + thumb_pad;
 
         if (total_images > 0 && active_img_idx_in_strip != -1)
         {
-            int num_strip_thumbs = (int) (avail_w / col_w);
+            int num_strip_thumbs = (int) (avail_w / (float)col_w);
             if (num_strip_thumbs < 1)
                 num_strip_thumbs = 1;
             if (num_strip_thumbs > total_images)
@@ -1406,16 +1420,16 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
                     start_idx = 0;
             }
 
-            float total_thumbs_w = (float) (num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
-            float thumbs_start_x = 55.0f * dpi + (avail_w - total_thumbs_w) / 2.0f;
+            float total_thumbs_w = (float) ((num_strip_thumbs * thumb_w) + ((num_strip_thumbs - 1) * thumb_pad));
+            float thumbs_start_x = (55.0F * dpi) + ((avail_w - total_thumbs_w) / 2.0F);
 
             for (int k = start_idx; k <= end_idx; k++)
             {
                 int i = (s->grid_items && s->strip_image_count > 0) ? s->strip_image_grid_indices[k] : k;
                 float tx = thumbs_start_x + (float) ((k - start_idx) * col_w);
-                float ty = strip_y + 10.0f * dpi;
+                float ty = strip_y + (10.0F * dpi);
 
-                if (x >= tx && x <= tx + thumb_w && y >= ty && y <= ty + thumb_w)
+                if ((float)x >= tx && (float)x <= tx + (float)thumb_w && (float)y >= ty && (float)y <= ty + (float)thumb_w)
                 {
                     if (s->selected_index != i)
                     {
@@ -1443,7 +1457,7 @@ void gal_activate_item(AppState *s, int idx)
         wcsncpy(s->viewing_dir, s->grid_items[idx].folder_path, MAX_PATH_LEN - 1);
         s->viewing_dir[MAX_PATH_LEN - 1] = L'\0';
         app_populate_grid_items(s);
-        s->scroll_target_y = s->scroll_current_y = 0.0f;
+        s->scroll_target_y = s->scroll_current_y = 0.0F;
         s->selected_index = 0;
         gal_update_layout(s);
         app_update_title(s);

@@ -1,0 +1,9 @@
+CompileFlags:
+  Add:
+    - "-mwindows"
+    - "-DWIN32_LEAN_AND_MEAN"
+    - "-D_WIN32_WINNT=0x0601"
+    - "-D__USE_MINGW_ANSI_STDIO=1"
+    - "-I."
+  Remove:
+    - "-Wpedantic"

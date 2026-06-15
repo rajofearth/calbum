@@ -21,7 +21,8 @@
 #include "lib/stb_dxt.h"
 
 // ── 3. Shared Types & Inline Utilities ──────────────────────────────────
-#include "src/types.h"
+// types.h is included by each .c file via their own #include, so we don't
+// need a separate include here — utils.c pulls it in first.
 #include "src/utils.c"
 
 // ── 4. Low-Level Subsystems ────────────────────────────────────────────
