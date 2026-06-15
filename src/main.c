@@ -817,7 +817,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             was_idle = 1;
         }
     }
-	exit_loop:
+exit_loop:
 
     // Stop background threads first — they may still be using WIC / D3D resources
     aw_stop_workers(&g_state);

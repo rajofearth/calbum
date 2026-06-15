@@ -38,7 +38,8 @@ static int append_entry(AppState *s, const wchar_t *full, WIN32_FIND_DATAW *ffd)
 static void scan_recursive(const wchar_t *dir, AppState *s)
 {
     wchar_t search[MAX_PATH_LEN];
-    wcsncpy(search, dir, MAX_PATH_LEN - 3)[MAX_PATH_LEN - 3] = L'\0';
+    wcsncpy(search, dir, MAX_PATH_LEN - 3);
+    search[MAX_PATH_LEN - 3] = L'\0';
     size_t len = wcslen(search);
     wcscat(search, (len && search[len - 1] != L'\\') ? L"\\*" : L"*");
 
@@ -52,7 +53,8 @@ static void scan_recursive(const wchar_t *dir, AppState *s)
         if (!wcscmp(ffd.cFileName, L".") || !wcscmp(ffd.cFileName, L".."))
             continue;
         wchar_t full[MAX_PATH_LEN];
-        wcsncpy(full, dir, MAX_PATH_LEN - 2)[MAX_PATH_LEN - 2] = L'\0';
+        wcsncpy(full, dir, MAX_PATH_LEN - 2);
+        full[MAX_PATH_LEN - 2] = L'\0';
         len = wcslen(full);
         if (len && full[len - 1] != L'\\')
             wcscat(full, L"\\");
@@ -75,6 +77,7 @@ static void scan_recursive(const wchar_t *dir, AppState *s)
 int fs_scan_directory(const wchar_t *path, AppState *s)
 {
     scan_recursive(path, s);
-    wcsncpy(s->current_dir, path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
+    wcsncpy(s->current_dir, path, MAX_PATH_LEN - 1);
+    s->current_dir[MAX_PATH_LEN - 1] = L'\0';
     return s->count;
 }

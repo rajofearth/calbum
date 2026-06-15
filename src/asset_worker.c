@@ -140,7 +140,7 @@ void aw_stop_workers(AppState *s)
     {
         if (s->worker_threads[i])
         {
-            WaitForSingleObject(s->worker_threads[i], 2000);
+            WaitForSingleObject(s->worker_threads[i], INFINITE);
             CloseHandle(s->worker_threads[i]);
             s->worker_threads[i] = NULL;
         }

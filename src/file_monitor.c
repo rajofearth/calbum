@@ -128,19 +128,19 @@ void fm_stop_monitor(AppState *s)
     if (s->dir_handle)
         CancelIoEx(s->dir_handle, NULL);
 
-    // Close the directory handle; this also unblocks ReadDirectoryChangesW
+    // Wait for the monitor thread to exit first (before closing handles)
+    if (s->monitor_thread)
+    {
+        WaitForSingleObject(s->monitor_thread, INFINITE);
+        CloseHandle(s->monitor_thread);
+        s->monitor_thread = NULL;
+    }
+
+    // Close the directory handle after the thread has exited
     if (s->dir_handle)
     {
         CloseHandle(s->dir_handle);
         s->dir_handle = NULL;
-    }
-
-    // Wait for the monitor thread to finish (max 2s, then it will be terminated)
-    if (s->monitor_thread)
-    {
-        WaitForSingleObject(s->monitor_thread, 2000);
-        CloseHandle(s->monitor_thread);
-        s->monitor_thread = NULL;
     }
 
     if (s->monitor_stop_event)

@@ -153,7 +153,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
     GridLayout lay;
     gal_calc_layout(s, &lay);
 
-    static InstanceData instances[4096];
+    static InstanceData instances[MAX_INSTANCES];
     int inst_count = 0;
 
     POINT pt;
@@ -276,7 +276,7 @@ void gal_render_gallery(HDC hdc, AppState *s)
             inst_count++;
         }
 
-        if (inst_count >= 4080)
+        if (inst_count >= MAX_INSTANCES - 16)
             break; // Leave room for scrollbar, topbar and buttons
     }
 

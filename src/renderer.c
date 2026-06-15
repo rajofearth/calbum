@@ -198,8 +198,10 @@ int r_init(AppState *s)
     s->d3d_device->lpVtbl->CreateInputLayout(s->d3d_device, ied, 5, vs_blob->lpVtbl->GetBufferPointer(vs_blob),
                                              vs_blob->lpVtbl->GetBufferSize(vs_blob), &s->input_layout);
 
-    vs_blob->lpVtbl->Release(vs_blob);
-    ps_blob->lpVtbl->Release(ps_blob);
+    if (vs_blob)
+        vs_blob->lpVtbl->Release(vs_blob);
+    if (ps_blob)
+        ps_blob->lpVtbl->Release(ps_blob);
 
     D3D11_BUFFER_DESC bd = {0};
     bd.Usage = D3D11_USAGE_DYNAMIC;

@@ -101,6 +101,13 @@ void app_load_folder(AppState *s, const wchar_t *path)
         free(result);
     }
 
+    // ── 2b. Drain any in-flight FileChange messages ─────────────────────
+    while (PeekMessageW(&msg, s->hwnd, WM_CALBUM_FILE_CHANGE, WM_CALBUM_FILE_CHANGE, PM_REMOVE))
+    {
+        FileChange *fc = (FileChange *) (uintptr_t) msg.lParam;
+        free(fc);
+    }
+
     // ── 3. Free old image resources ──────────────────────────────────
     r_free_full_image(s);
     if (s->images)

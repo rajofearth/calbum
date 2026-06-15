@@ -19,13 +19,17 @@ Each item below is a concrete, ordered implementation step. Items are grouped in
 
 Tags: `BUG` = crash/wrong behavior, `SEC` = security hardening, `PERF` = performance optimization, `UX` = usability improvement, `ARCH` = structural improvement, `CQ` = code quality.
 
+**Status markers:** `✅ DONE` = completed and verified, blank = pending.
+
 ---
 
-## Pass 1 — Crash Bugs & Security (Fix Immediately)
+## Pass 1 — Crash Bugs & Security (Fix Immediately) ✅ DONE
 
 These are the highest priority: they can crash the program, cause data races, or silently corrupt memory.
 
-### 1.1 [BUG] Guard division by zero in thumbnail decoder
+**Completed:** 2026-06-16 via 6 parallel subagents. All 29 tests pass. Release builds clean.
+
+### 1.1 [BUG] Guard division by zero in thumbnail decoder ✅ DONE
 
 **Files:** `src/image_loader.c:55-72`
 
@@ -38,24 +42,19 @@ These are the highest priority: they can crash the program, cause data races, or
   ```
 - Also add a belt-and-suspenders clamp on `tw`/`th` before allocation: `if (tw > 4096) tw = 4096;`
 
-### 1.2 [BUG] Add instance buffer overflow guard in full-image renderer
+### 1.2 [BUG] Add instance buffer overflow guard in full-image renderer ✅ DONE
 
 **Files:** `src/gallery_fullimage.c:178`
 
 **What:** The full-image renderer uses `static InstanceData instances[4096]` without checking `inst_count < 4096` before writing. With a wide window / many strip thumbnails, the stack array overflows.
 
 **How:**
-- Add at the top of `gal_render_fullimage`, before the InstanceData batch building loop:
-  ```c
-  #define MAX_INSTANCES 4096
-  ```
-- Add a guard before every `inst_count++`:
-  ```c
-  if (inst_count >= MAX_INSTANCES - 16) break;
-  ```
-- Move the `#define MAX_INSTANCES 4096` into `types.h` and use it consistently in both `gallery.c:156` and `gallery_fullimage.c:178`.
+- `#define MAX_INSTANCES 4096` added to `types.h` (shared constant).
+- Both `gallery_fullimage.c:178` and `gallery.c:156` now use `instances[MAX_INSTANCES]`.
+- Guards added before every `inst_count++` and every `ui_*` call: `if (inst_count >= MAX_INSTANCES - 16) return;` at top level, `break;` inside the strip loop.
+- Existing guard in `gallery.c:279` updated from `4080` → `MAX_INSTANCES - 16`.
 
-### 1.3 [BUG] Drain WM_CALBUM_FILE_CHANGE messages during folder reload
+### 1.3 [BUG] Drain WM_CALBUM_FILE_CHANGE messages during folder reload ✅ DONE
 
 **Files:** `src/app.c:92-102`
 
@@ -71,50 +70,49 @@ These are the highest priority: they can crash the program, cause data races, or
   }
   ```
 
-### 1.4 [SEC] Extend worker shutdown timeout to INFINITE
+### 1.4 [SEC] Extend worker shutdown timeout to INFINITE ✅ DONE
 
-**Files:** `src/asset_worker.c:139-146`
+**Files:** `src/asset_worker.c:139-146`, `src/file_monitor.c:141`
 
 **What:** `WaitForSingleObject(s->worker_threads[i], 2000)` uses a 2-second timeout. If a worker is stuck in WIC I/O, the main thread proceeds to close handles and call `il_shutdown_wic()` while the worker still runs — a use-after-free (see finding 1.5).
 
 **How:**
-- Change `WaitForSingleObject(s->worker_threads[i], 2000)` to `WaitForSingleObject(s->worker_threads[i], INFINITE)`.
-- Workers exit promptly when the stop event is set, so this is safe.
-- Similarly in `fm_stop_monitor` (`file_monitor.c:141`), change `WaitForSingleObject(s->monitor_thread, 2000)` to `WaitForSingleObject(s->monitor_thread, INFINITE)`.
+- Changed `WaitForSingleObject(s->worker_threads[i], 2000)` to `WaitForSingleObject(s->worker_threads[i], INFINITE)` in `asset_worker.c`.
+- Changed `WaitForSingleObject(s->monitor_thread, 2000)` to `WaitForSingleObject(s->monitor_thread, INFINITE)` in `file_monitor.c` (done together with 1.5 since both modify `fm_stop_monitor`).
 
-### 1.5 [SEC] Fix fm_stop_monitor handle close ordering
+### 1.5 [SEC] Fix fm_stop_monitor handle close ordering ✅ DONE
 
 **Files:** `src/file_monitor.c:117-151`
 
 **What:** `CloseHandle(dir_handle)` is called before waiting for the monitor thread to exit. The thread may still be executing inside `ReadDirectoryChangesW`.
 
-**How:**
-- Reorder to:
+**How (applied together with 1.4):**
   1. SetEvent(monitor_stop_event)
   2. CancelIoEx(dir_handle, NULL)
-  3. WaitForSingleObject(monitor_thread, INFINITE)
-  4. CloseHandle(dir_handle)
-  5. CloseHandle(monitor_thread)
+  3. WaitForSingleObject(monitor_thread, INFINITE)  ← changed from 2000ms
+  4. CloseHandle(monitor_thread)                     ← moved before dir_handle
+  5. CloseHandle(dir_handle)                         ← moved after thread exit
   6. CloseHandle(monitor_stop_event)
 
-### 1.6 [BUG] Fix wcsncpy fragility in file_scanner.c
+### 1.6 [BUG] Fix wcsncpy fragility in file_scanner.c ✅ DONE
 
-**Files:** `src/file_scanner.c:41`
+**Files:** `src/file_scanner.c:41, 55, 78`
 
 **What:** The chained `wcsncpy(...)[...] = L'\0'` pattern is correct but fragile.
 
 **How:**
-- Replace:
+- The plan originally cited only line 41, but **3 identical patterns** exist in this file (lines 41, 55, 78). All three were fixed:
   ```c
+  // Before:
   wcsncpy(search, dir, MAX_PATH_LEN - 3)[MAX_PATH_LEN - 3] = L'\0';
-  ```
-- With:
-  ```c
+
+  // After:
   wcsncpy(search, dir, MAX_PATH_LEN - 3);
   search[MAX_PATH_LEN - 3] = L'\0';
   ```
+- **Note:** The same pattern also exists in `asset_worker.c:160`. Not in Pass 1 scope — consider fixing in a later pass.
 
-### 1.7 [BUG] Add NULL check for shader compile blobs
+### 1.7 [BUG] Add NULL check for shader compile blobs ✅ DONE
 
 **Files:** `src/renderer.c:168-202`
 
@@ -126,6 +124,27 @@ These are the highest priority: they can crash the program, cause data races, or
   if (vs_blob) vs_blob->lpVtbl->Release(vs_blob);
   if (ps_blob) ps_blob->lpVtbl->Release(ps_blob);
   ```
+
+---
+
+## Pass 1 Completion Notes
+
+**Date:** 2026-06-16
+**Execution:** 6 parallel subagents, disjoint write sets
+**Validation:** `make release` — clean compile, `make test` — 29/29 passed, `make format` — clean
+
+### Scope Changes (vs. original plan)
+| Item | Original Scope | Actual Scope | Reason |
+|---|---|---|---|
+| 1.2 | `gallery_fullimage.c` only | `gallery_fullimage.c`, `gallery.c`, `types.h` | Moved `MAX_INSTANCES` to shared header; updated existing `gallery.c` guard to use it |
+| 1.4 | `asset_worker.c` only | `asset_worker.c` + `file_monitor.c` | Same pattern in both files; 1.4 and 1.5 were combined into one subagent |
+| 1.6 | 1 line (`file_scanner.c:41`) | 3 lines (41, 55, 78) | Same chained pattern exists at 3 sites in the file — fixed all for consistency |
+
+### Cross-Cutting Observations
+1. **Same `wcsncpy` chained pattern in `asset_worker.c:160`** — not in scope but could be fixed in a future pass.
+2. **`D2D brush leak` (audit L-08)** in `renderer.c:587-589,622-632` remains untouched, deferred from Pass 1.
+3. **Item 1.4 and 1.5 must always be paired** — they both modify `fm_stop_monitor` in `file_monitor.c`. Any future work on that function should account for both timeout and handle ordering.
+4. **All changes are correctness-only** — no functional additions, no new features. Pass 1 strictly fixes bugs and security holes.
 
 ---
 
@@ -689,12 +708,12 @@ Some findings appear in multiple audit reports. Below cross-references each topi
 
 ## Summary: All Changes at a Glance
 
-| Pass | Count | Type | Description |
-|---|---|---|---|
-| 1 | 7 | BUG/SEC | Crash fixes, security hardening, thread safety |
-| 2 | 8 | PERF/UX | UI freezes, GPU thrashing, rendering overhead |
-| 3 | 6 | ARCH/CQ | Code deduplication, decomposition, const-correctness |
-| 4 | 7 | UX | Empty state, error indicators, scroll fixes, polish |
-| 5 | 3 | ARCH | God struct decomposition, error logging, cache extraction |
-| 6 | 3 | CQ | Test infrastructure, ring buffer tests, WIC stubs |
-| **Total** | **34** | | **Deduplicated implementation items** |
+| Pass | Count | Type | Description | Status |
+|---|---|---|---|---|
+| 1 | 7 | BUG/SEC | Crash fixes, security hardening, thread safety | ✅ DONE |
+| 2 | 8 | PERF/UX | UI freezes, GPU thrashing, rendering overhead | |
+| 3 | 6 | ARCH/CQ | Code deduplication, decomposition, const-correctness | |
+| 4 | 7 | UX | Empty state, error indicators, scroll fixes, polish | |
+| 5 | 3 | ARCH | God struct decomposition, error logging, cache extraction | |
+| 6 | 3 | CQ | Test infrastructure, ring buffer tests, WIC stubs | |
+| **Total** | **34** | | **Deduplicated implementation items** | **1/6 passes done** |

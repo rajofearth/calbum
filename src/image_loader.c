@@ -55,6 +55,11 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
     UINT w = 0;
     UINT h = 0;
     frame->lpVtbl->GetSize(frame, &w, &h);
+    if (w == 0 || h == 0)
+    {
+        frame->lpVtbl->Release(frame);
+        return NULL;
+    }
 
     UINT tw = thumb_size;
     UINT th = thumb_size;
@@ -70,6 +75,10 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
         tw = 1;
     if (th == 0)
         th = 1;
+    if (tw > 4096)
+        tw = 4096;
+    if (th > 4096)
+        th = 4096;
 
     IWICBitmapScaler *scaler = NULL;
     hr = g_wic_factory->lpVtbl->CreateBitmapScaler(g_wic_factory, &scaler);

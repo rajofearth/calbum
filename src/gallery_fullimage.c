@@ -175,7 +175,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         }
     }
 
-    static InstanceData instances[4096];
+    static InstanceData instances[MAX_INSTANCES];
     int inst_count = 0;
 
     // --- 1. Main Image Area ---
@@ -207,6 +207,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             instances[inst_count].tex_index = TOKEN_FULL_IMAGE; // Samples from register(t1)
             instances[inst_count].opacity = 1.0F;
             instances[inst_count].corner_radius = 4.0F * s->dpi_scale;
+            if (inst_count >= MAX_INSTANCES - 16)
+                return;
             inst_count++;
 
             // Ensure active_full_srv matches the geometry we just submitted
@@ -226,14 +228,20 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     instances[inst_count].h = s->layout.topbar_height + (20.0F * s->dpi_scale);
     instances[inst_count].tex_index = TOKEN_PANEL; // Solid dark gray backplate
     instances[inst_count].opacity = 1.0F;
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     inst_count++;
 
     // --- 2. Back Button ---
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     ui_button(instances, &inst_count, 20.0F * s->dpi_scale, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale,
               30.0F * s->dpi_scale, 0.8F, (float) pt.x, (float) pt.y, 6.0F * s->dpi_scale);
 
     // --- 3. Info Button ---
     float info_btn_x = (float) s->window_width - (100.0F * s->dpi_scale);
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     ui_badge(instances, &inst_count, info_btn_x, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale, 30.0F * s->dpi_scale, 0.8F,
              s->info_open, (float) pt.x, (float) pt.y, 6.0F * s->dpi_scale);
 
@@ -246,6 +254,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         float bw = 120.0F * s->dpi_scale;
         float bh = 30.0F * s->dpi_scale;
         int hovered = ((float) pt.x >= bx && (float) pt.x <= bx + bw && (float) pt.y >= by && (float) pt.y <= by + bh);
+        if (inst_count >= MAX_INSTANCES - 16)
+            return;
         ui_badge(instances, &inst_count, bx, by, bw, bh, 0.8F, hovered, (float) pt.x, (float) pt.y,
                  6.0F * s->dpi_scale);
     }
@@ -261,13 +271,19 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     instances[inst_count].h = 130.0F * s->dpi_scale;
     instances[inst_count].tex_index = TOKEN_PANEL; // Gray backplate
     instances[inst_count].opacity = 1.0F;          // Fully solid
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     inst_count++;
 
     // Previous Arrow <
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     ui_button(instances, &inst_count, 20.0F * s->dpi_scale, strip_y + (35.0F * s->dpi_scale), 30.0F * s->dpi_scale,
               30.0F * s->dpi_scale, 0.8F, (float) pt.x, (float) pt.y, 15.0F * s->dpi_scale);
 
     // Next Arrow >
+    if (inst_count >= MAX_INSTANCES - 16)
+        return;
     ui_button(instances, &inst_count, (float) s->window_width - (50.0F * s->dpi_scale),
               strip_y + (35.0F * s->dpi_scale), 30.0F * s->dpi_scale, 30.0F * s->dpi_scale, 0.8F, (float) pt.x,
               (float) pt.y, 15.0F * s->dpi_scale);
@@ -354,6 +370,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
                 instances[inst_count].tex_index = TOKEN_ACCENT; // Accent border
                 instances[inst_count].opacity = 1.0F;
                 instances[inst_count].corner_radius = 8.0F * s->dpi_scale;
+                if (inst_count >= MAX_INSTANCES - 16)
+                    break;
                 inst_count++;
             }
 
@@ -371,6 +389,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
             {
                 s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
             }
+            if (inst_count >= MAX_INSTANCES - 16)
+                break;
             inst_count++;
         }
     }
