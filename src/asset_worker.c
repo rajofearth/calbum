@@ -25,9 +25,9 @@ static void ensure_cache_dir()
         PWSTR appdata;
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &appdata)))
         {
-            swprintf(g_cache_dir, MAX_PATH_LEN, L"%s\\TaskSlinger", appdata);
+            swprintf(g_cache_dir, MAX_PATH_LEN, L"%s\\calbum", appdata);
             CreateDirectoryW(g_cache_dir, NULL);
-            swprintf(g_cache_dir, MAX_PATH_LEN, L"%s\\TaskSlinger\\Cache", appdata);
+            swprintf(g_cache_dir, MAX_PATH_LEN, L"%s\\calbum\\Cache", appdata);
             CreateDirectoryW(g_cache_dir, NULL);
             CoTaskMemFree(appdata);
         }

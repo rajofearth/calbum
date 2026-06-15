@@ -87,16 +87,38 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<- EOF
-          ## calbum ${{ steps.tag.outputs.name }}
+          # calbum ${{ steps.tag.outputs.name }}
 
-          ### Downloads
+          > _Edit this draft before publishing. Replace placeholders below._
+
+          ## Downloads
+
           | File | Platform |
           |------|----------|
           | calbum-x64.exe | 64-bit Intel/AMD Windows |
           | calbum-arm64.exe | 64-bit ARM Windows |
 
-          ### Changelog
-          _(This is a draft — replace with the final release notes before publishing)_
+          > **Note:** This is a portable, unsigned executable. Windows SmartScreen / Defender may display an "unrecognized publisher" warning. To dismiss it, click **More info** → **Run anyway**.
+
+          ---
+
+          ## Features
+
+          _(Summarise what's new in this release.)_
+
+          ## Known Issues
+
+          _(List any known issues.)_
+
+          ---
+
+          ## Changelog
+
+          ### ${{ steps.tag.outputs.name }} ($(date +%Y-%m-%d))
+
+          - _(Describe changes since the previous release)_
+
+          ---
           EOF
 
       - name: Publish draft release
