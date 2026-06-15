@@ -45,12 +45,7 @@ jobs:
           echo "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build release (${{ matrix.arch }})
-        run: >
-          ${{ matrix.triple }}-gcc build.c -o ${{ matrix.out_name }}
-          -DAPP_VERSION="$(cat VERSION)" -DAPP_VERSION_W=L"$(cat VERSION)"
-          -mwindows -std=c17 -O2 -Wall -Wextra
-          -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid
-          -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
+        run: make release CC=${{ matrix.triple }}-gcc TARGET=${{ matrix.out_name }}
         shell: sh
 
       - name: Upload artifact
