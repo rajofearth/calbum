@@ -40,6 +40,13 @@
 #define RING_CAPACITY 4096
 #define ARENA_CAPACITY (16ULL * 1024 * 1024) // 16 MB
 #define SMOOTH_SCROLL_SPEED 12.0f
+#ifndef APP_VERSION
+#define APP_VERSION      "0.1.0"
+#endif
+#ifndef APP_VERSION_W
+#define APP_VERSION_W   L"0.1.0"
+#endif
+
 #define MIN_WINDOW_WIDTH 400
 #define MIN_WINDOW_HEIGHT 300
 

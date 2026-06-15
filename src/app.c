@@ -155,8 +155,8 @@ void app_load_folder(AppState *s, const wchar_t *path)
 
 void app_update_title(AppState *s)
 {
-    wchar_t title[MAX_PATH_LEN + 32];
-    wsprintfW(title, L"calbum — %s", s->viewing_dir);
+    wchar_t title[MAX_PATH_LEN + 64];
+    wsprintfW(title, L"calbum " APP_VERSION_W L" — %s", s->viewing_dir);
     SetWindowTextW(s->hwnd, title);
 }
 
