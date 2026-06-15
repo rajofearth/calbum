@@ -43,6 +43,9 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
 
     for (;;)
     {
+        if (s->worker_stop_event && WaitForSingleObject(s->worker_stop_event, 0) == WAIT_OBJECT_0)
+            return 0;
+
         LoadRequest *req = (LoadRequest *) rb_try_pop(&s->work_queue);
 
         if (!req)

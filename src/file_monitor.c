@@ -124,18 +124,21 @@ void fm_stop_monitor(AppState *s)
     if (s->monitor_stop_event)
     {
         SetEvent(s->monitor_stop_event);
-        WaitForSingleObject(s->monitor_thread, 2000);
-        CloseHandle(s->monitor_stop_event);
-        s->monitor_stop_event = NULL;
-    }
-    if (s->monitor_thread)
-    {
-        CloseHandle(s->monitor_thread);
-        s->monitor_thread = NULL;
     }
     if (s->dir_handle)
     {
         CloseHandle(s->dir_handle);
         s->dir_handle = NULL;
+    }
+    if (s->monitor_thread)
+    {
+        WaitForSingleObject(s->monitor_thread, 2000);
+        CloseHandle(s->monitor_thread);
+        s->monitor_thread = NULL;
+    }
+    if (s->monitor_stop_event)
+    {
+        CloseHandle(s->monitor_stop_event);
+        s->monitor_stop_event = NULL;
     }
 }
