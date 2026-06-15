@@ -66,5 +66,9 @@ Thumbs.db
 # --- Tests ---
 tests/build/
 
+# --- Release artifacts (not committed to repo) ---
+RELEASE_NOTES.md
+cache/thumbnails/
+
 # --- Windows reserved names ---
 nul
