@@ -1,13 +1,13 @@
 CC      ?= gcc
 LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
 
-# Read version from VERSION file
-APP_VERSION := $(shell cat VERSION)
-
-CFLAGS_RELEASE = -std=c17 -O2 -mwindows -Wall -Wextra \
-	-DAPP_VERSION='"$(APP_VERSION)"' -DAPP_VERSION_W='L"$(APP_VERSION)"'
-CFLAGS_DEBUG   = -std=c17 -O0 -mwindows -Wall -Wextra -Wpedantic -g \
-	-DAPP_VERSION='"$(APP_VERSION)"' -DAPP_VERSION_W='L"$(APP_VERSION)"'
+# Version is defined in src/types.h (APP_VERSION / APP_VERSION_W).
+# To override for release builds, pass CFLAGS_RELEASE/CFLAGS_DEBUG on the
+# command line, e.g.: make release CFLAGS_RELEASE="\$(CFLAGS_RELEASE)
+#   -DAPP_VERSION='\"1.0.0\"' -DAPP_VERSION_W='L\"1.0.0\"'"
+# CI does this automatically from the git tag.
+CFLAGS_RELEASE = -std=c17 -O2 -mwindows -Wall -Wextra
+CFLAGS_DEBUG   = -std=c17 -O0 -mwindows -Wall -Wextra -Wpedantic -g
 
 BUILD    = build.c
 TARGET   = calbum.exe
