@@ -271,20 +271,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
         int hovered = ui_is_hovered(x, y, thumb_size, thumb_size, (float)pt.x, (float)pt.y);
 
-        // Selection Border: draw a glowing accent color border slightly larger
-        if (s->selected_index == i) {
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x - 4.0f * s->dpi_scale;
-            instances[inst_count].y = y - 4.0f * s->dpi_scale;
-            instances[inst_count].w = thumb_size + 8.0f * s->dpi_scale;
-            instances[inst_count].h = thumb_size + 8.0f * s->dpi_scale;
-            instances[inst_count].tex_index = TOKEN_ACCENT; // Accent color token
-            instances[inst_count].opacity = 1.0f;
-            instances[inst_count].corner_radius = s->layout.thumb_radius + 4.0f * s->dpi_scale;
-            inst_count++;
-        }
-        // Hover Border: draw a subtle translucent white border
-        else if (hovered) {
+        // Hover Border: draw a subtle translucent white border (only if not selected)
+        if (s->selected_index != i && hovered) {
             instances[inst_count] = (InstanceData){0};
             instances[inst_count].x = x - 2.0f * s->dpi_scale;
             instances[inst_count].y = y - 2.0f * s->dpi_scale;
@@ -332,6 +320,19 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 }
                 inst_count++;
             }
+        }
+
+        // Selection Outline: draw a glowing accent color outline on top of the item
+        if (s->selected_index == i) {
+            instances[inst_count] = (InstanceData){0};
+            instances[inst_count].x = x;
+            instances[inst_count].y = y;
+            instances[inst_count].w = thumb_size;
+            instances[inst_count].h = thumb_size;
+            instances[inst_count].tex_index = TOKEN_SELECTION_OUTLINE; // Accent outline token
+            instances[inst_count].opacity = 1.0f;
+            instances[inst_count].corner_radius = s->layout.thumb_radius;
+            inst_count++;
         }
 
         if (inst_count >= 4090) break; // Leave room for scrollbar and buttons

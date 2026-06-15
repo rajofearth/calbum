@@ -59,7 +59,8 @@ typedef enum {
     TOKEN_SCROLLBAR = -4,
     TOKEN_FULL_IMAGE = -5,
     TOKEN_DROP_SHADOW = -6,
-    TOKEN_ACCENT = -7
+    TOKEN_ACCENT = -7,
+    TOKEN_SELECTION_OUTLINE = -8
 } RenderToken;
 
 // -------------------------------------------------------------------------
