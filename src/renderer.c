@@ -272,15 +272,50 @@ int r_init(AppState *s)
     {
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_regular);
+            DWRITE_FONT_STRETCH_NORMAL, 15.0f, L"en-US", &s->dwrite_format_regular);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_semibold);
+            DWRITE_FONT_STRETCH_NORMAL, 15.0f, L"en-US", &s->dwrite_format_semibold);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &s->dwrite_format_small);
+            DWRITE_FONT_STRETCH_NORMAL, 11.5f, L"en-US", &s->dwrite_format_small);
+
+        // Find best monospace font available
+        const wchar_t *mono_font = L"Consolas";
+        IDWriteFontCollection *collection = NULL;
+        if (SUCCEEDED(s->dwrite_factory->lpVtbl->GetSystemFontCollection(s->dwrite_factory, &collection, FALSE)) && collection)
+        {
+            UINT32 index = 0;
+            BOOL exists = FALSE;
+            collection->lpVtbl->FindFamilyName(collection, L"Zed Mono", &index, &exists);
+            if (exists)
+            {
+                mono_font = L"Zed Mono";
+            }
+            else
+            {
+                collection->lpVtbl->FindFamilyName(collection, L"Lilex", &index, &exists);
+                if (exists)
+                {
+                    mono_font = L"Lilex";
+                }
+            }
+            collection->lpVtbl->Release(collection);
+        }
+
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &s->dwrite_format_mono);
+
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &s->dwrite_format_mono_small);
+
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, 11.5f, L"en-US", &s->dwrite_format_small_semibold);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -409,9 +444,14 @@ void r_resize(AppState *s)
 
 void r_clear(AppState *s, float r, float g, float b)
 {
-    (void) r;
-    (void) g;
-    (void) b;
+    if (!s->rtv)
+        return;
+    float color[4] = { r, g, b, 1.0f };
+    s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, color);
+}
+
+void r_clear_theme(AppState *s)
+{
     if (!s->rtv)
         return;
     s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, s->theme.bg);
@@ -640,6 +680,12 @@ void r_shutdown(AppState *s)
         ((IUnknown *) s->dwrite_format_semibold)->lpVtbl->Release((IUnknown *) s->dwrite_format_semibold);
     if (s->dwrite_format_small)
         ((IUnknown *) s->dwrite_format_small)->lpVtbl->Release((IUnknown *) s->dwrite_format_small);
+    if (s->dwrite_format_mono)
+        ((IUnknown *) s->dwrite_format_mono)->lpVtbl->Release((IUnknown *) s->dwrite_format_mono);
+    if (s->dwrite_format_mono_small)
+        ((IUnknown *) s->dwrite_format_mono_small)->lpVtbl->Release((IUnknown *) s->dwrite_format_mono_small);
+    if (s->dwrite_format_small_semibold)
+        ((IUnknown *) s->dwrite_format_small_semibold)->lpVtbl->Release((IUnknown *) s->dwrite_format_small_semibold);
     if (s->dwrite_format_icons)
         ((IUnknown *) s->dwrite_format_icons)->lpVtbl->Release((IUnknown *) s->dwrite_format_icons);
     if (s->dwrite_format_icons_large)
@@ -853,4 +899,26 @@ int r_load_full_image(AppState *s, const wchar_t *path)
 
     s->active_full_srv = new_slot->srv;
     return 1;
+}
+
+float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format)
+{
+    if (!s->dwrite_factory || !format || !text)
+        return 0.0f;
+
+    IDWriteTextLayout *layout = NULL;
+    HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(
+        s->dwrite_factory, text, (UINT32) wcslen(text), format, 9999.0f, 9999.0f, &layout);
+
+    float width = 0.0f;
+    if (SUCCEEDED(hr) && layout)
+    {
+        DWRITE_TEXT_METRICS metrics;
+        if (SUCCEEDED(layout->lpVtbl->GetMetrics(layout, &metrics)))
+        {
+            width = metrics.width;
+        }
+        ((IUnknown *) layout)->lpVtbl->Release((IUnknown *) layout);
+    }
+    return width;
 }

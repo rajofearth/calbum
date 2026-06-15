@@ -86,48 +86,41 @@ static int image_select_offset(AppState *s, int delta)
 
 static void theme_init(AppState *s)
 {
-    DWORD colorization;
-    BOOL opaque;
-    if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque)))
-    {
-        s->theme.accent[0] = ((colorization >> 16) & 0xFF) / 255.0f;
-        s->theme.accent[1] = ((colorization >> 8) & 0xFF) / 255.0f;
-        s->theme.accent[2] = ((colorization >> 0) & 0xFF) / 255.0f;
-        s->theme.accent[3] = 1.0f;
-    }
-    else
-    {
-        s->theme.accent[0] = 0.0f;
-        s->theme.accent[1] = 0.47f;
-        s->theme.accent[2] = 0.83f;
-        s->theme.accent[3] = 1.0f;
-    }
+    // Deep Charcoal / Obsidian base theme with Amber/Warm Orange accent
+    s->theme.accent[0] = 0.961f; // #f59e0b
+    s->theme.accent[1] = 0.620f;
+    s->theme.accent[2] = 0.043f;
+    s->theme.accent[3] = 1.0f;
 
-    s->theme.bg[0] = 0.0f;
-    s->theme.bg[1] = 0.0f;
-    s->theme.bg[2] = 0.0f;
-    s->theme.bg[3] = 0.05f;
-    s->theme.panel[0] = 0.12f;
-    s->theme.panel[1] = 0.12f;
-    s->theme.panel[2] = 0.12f;
+    s->theme.bg[0] = 0.039f; // #0a0b0d (Obsidian background)
+    s->theme.bg[1] = 0.043f;
+    s->theme.bg[2] = 0.051f;
+    s->theme.bg[3] = 1.0f;
+
+    s->theme.panel[0] = 0.078f; // #14161b (Dark panel background)
+    s->theme.panel[1] = 0.086f;
+    s->theme.panel[2] = 0.106f;
     s->theme.panel[3] = 1.0f;
-    s->theme.border[0] = 0.2f;
-    s->theme.border[1] = 0.2f;
-    s->theme.border[2] = 0.2f;
+
+    s->theme.border[0] = 0.133f; // #22252c (Dark border variant)
+    s->theme.border[1] = 0.145f;
+    s->theme.border[2] = 0.173f;
     s->theme.border[3] = 1.0f;
 
-    s->theme.text_main[0] = 1.0f;
-    s->theme.text_main[1] = 1.0f;
-    s->theme.text_main[2] = 1.0f;
+    s->theme.text_main[0] = 0.863f; // #dce0e5
+    s->theme.text_main[1] = 0.878f;
+    s->theme.text_main[2] = 0.898f;
     s->theme.text_main[3] = 1.0f;
-    s->theme.text_muted[0] = 0.6f;
-    s->theme.text_muted[1] = 0.6f;
-    s->theme.text_muted[2] = 0.6f;
+
+    s->theme.text_muted[0] = 0.663f; // #a9afbc
+    s->theme.text_muted[1] = 0.686f;
+    s->theme.text_muted[2] = 0.737f;
     s->theme.text_muted[3] = 1.0f;
-    s->theme.scrollbar[0] = 1.0f;
-    s->theme.scrollbar[1] = 1.0f;
-    s->theme.scrollbar[2] = 1.0f;
-    s->theme.scrollbar[3] = 0.3f;
+
+    s->theme.scrollbar[0] = 0.784f; // #c8ccd44c
+    s->theme.scrollbar[1] = 0.800f;
+    s->theme.scrollbar[2] = 0.831f;
+    s->theme.scrollbar[3] = 0.30f;
 
     if (s->d3d_context && s->theme_buffer)
     {

@@ -96,27 +96,24 @@ int ui_button(InstanceData *instances, int *inst_count, float x, float y, float 
 {
     int hovered = ui_is_hovered(x, y, w, h, mx, my);
 
-    // If hovered, draw sleek glowing accent border
-    if (hovered)
-    {
-        instances[*inst_count].x = x - 1.0f;
-        instances[*inst_count].y = y - 1.0f;
-        instances[*inst_count].w = w + 2.0f;
-        instances[*inst_count].h = h + 2.0f;
-        instances[*inst_count].tex_index = TOKEN_ACCENT; // Accent color token
-        instances[*inst_count].opacity = 0.8f;
-        instances[*inst_count].corner_radius = corner_radius + 1.0f;
-        instances[*inst_count]._pad = 0.0f;
-        (*inst_count)++;
-    }
+    // Draw subtle button border (1px peek)
+    instances[*inst_count].x = x - 1.0f;
+    instances[*inst_count].y = y - 1.0f;
+    instances[*inst_count].w = w + 2.0f;
+    instances[*inst_count].h = h + 2.0f;
+    instances[*inst_count].tex_index = TOKEN_BORDER; // One Dark border color
+    instances[*inst_count].opacity = hovered ? 0.8f : 0.0f; // Ghost style: no border unless hovered
+    instances[*inst_count].corner_radius = corner_radius + 1.0f;
+    instances[*inst_count]._pad = 0.0f;
+    (*inst_count)++;
 
     // Draw main button background
     instances[*inst_count].x = x;
     instances[*inst_count].y = y;
     instances[*inst_count].w = w;
     instances[*inst_count].h = h;
-    instances[*inst_count].tex_index = TOKEN_PANEL; // Gray backplate
-    instances[*inst_count].opacity = hovered ? 0.95f : opacity;
+    instances[*inst_count].tex_index = hovered ? TOKEN_BORDER : TOKEN_PANEL; // Use lighter border color on hover
+    instances[*inst_count].opacity = hovered ? 0.8f : opacity;
     instances[*inst_count].corner_radius = corner_radius;
     instances[*inst_count]._pad = 0.0f;
     (*inst_count)++;
@@ -126,7 +123,7 @@ int ui_button(InstanceData *instances, int *inst_count, float x, float y, float 
 
 void ui_button_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold,
+    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_small_semibold,
                         s->theme.text_main);
 }
 
@@ -166,6 +163,6 @@ int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w
 
 void ui_badge_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold,
+    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_small_semibold,
                         s->theme.text_main);
 }

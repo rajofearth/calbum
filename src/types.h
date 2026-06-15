@@ -389,6 +389,9 @@ typedef struct AppState
     struct IDWriteTextFormat *dwrite_format_semibold;
     struct IDWriteTextFormat *dwrite_format_regular;
     struct IDWriteTextFormat *dwrite_format_small;
+    struct IDWriteTextFormat *dwrite_format_mono;
+    struct IDWriteTextFormat *dwrite_format_mono_small;
+    struct IDWriteTextFormat *dwrite_format_small_semibold;
     struct IDWriteTextFormat *dwrite_format_icons;
     struct IDWriteTextFormat *dwrite_format_icons_large;
     struct ID2D1SolidColorBrush *d2d_brush;
@@ -548,6 +551,7 @@ int r_init(AppState *s);
 void r_shutdown(AppState *s);
 void r_resize(AppState *s);
 void r_clear(AppState *s, float r, float g, float b);
+void r_clear_theme(AppState *s);
 void r_present(AppState *s);
 int r_alloc_texture_slot(AppState *s, int image_index);
 void r_upload_texture(AppState *s, int slot, void *bc1_data);
@@ -557,6 +561,7 @@ void r_copy_backbuffer_for_blur(AppState *s);
 void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, float h);
 void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, float w, float h, int align_x, int align_y,
                          struct IDWriteTextFormat *format, float color[4]);
+float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format);
 int r_load_full_image(AppState *s, const wchar_t *path);
 void r_free_full_image(AppState *s);
 FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path);

@@ -12,12 +12,12 @@ void gal_update_layout_scales(AppState *s)
     if (s->dpi_scale <= 0.0f)
         s->dpi_scale = 1.0f;
 
-    s->layout.grid_gap = 16.0f * s->dpi_scale;
-    s->layout.panel_padding = 16.0f * s->dpi_scale;
-    s->layout.thumb_radius = 8.0f * s->dpi_scale;
-    s->layout.card_radius = 12.0f * s->dpi_scale;
-    s->layout.button_height = 32.0f * s->dpi_scale;
-    s->layout.topbar_height = 50.0f * s->dpi_scale;
+    s->layout.grid_gap = 12.0f * s->dpi_scale;
+    s->layout.panel_padding = 12.0f * s->dpi_scale;
+    s->layout.thumb_radius = 4.0f * s->dpi_scale;
+    s->layout.card_radius = 6.0f * s->dpi_scale;
+    s->layout.button_height = 26.0f * s->dpi_scale;
+    s->layout.topbar_height = 38.0f * s->dpi_scale;
     s->layout.scrollbar_w = 6.0f * s->dpi_scale;
 }
 
@@ -334,7 +334,7 @@ static void format_folder_contents(int image_count, int folder_count, wchar_t *b
 void gal_render_gallery(HDC hdc, AppState *s)
 {
     (void) hdc; // Unused parameter
-    r_clear(s, 0.12f, 0.12f, 0.12f);
+    r_clear_theme(s);
 
     int total_items = s->grid_items ? s->grid_item_count : s->count;
     if (total_items == 0)
@@ -366,20 +366,6 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
         int hovered = ui_is_hovered(x, y, thumb_size, thumb_size, (float) pt.x, (float) pt.y);
 
-        // Hover Border: draw a subtle translucent white border (only if not selected)
-        if (s->selected_index != i && hovered)
-        {
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x - 2.0f * s->dpi_scale;
-            instances[inst_count].y = y - 2.0f * s->dpi_scale;
-            instances[inst_count].w = thumb_size + 4.0f * s->dpi_scale;
-            instances[inst_count].h = thumb_size + 4.0f * s->dpi_scale;
-            instances[inst_count].tex_index = TOKEN_BORDER; // White border
-            instances[inst_count].opacity = 0.35f;
-            instances[inst_count].corner_radius = s->layout.thumb_radius + 2.0f * s->dpi_scale;
-            inst_count++;
-        }
-
         GridItemType type = s->grid_items ? s->grid_items[i].type : ITEM_IMAGE;
         int img_idx = s->grid_items ? s->grid_items[i].image_index : i;
 
@@ -391,9 +377,20 @@ void gal_render_gallery(HDC hdc, AppState *s)
             instances[inst_count].y = y;
             instances[inst_count].w = thumb_size;
             instances[inst_count].h = thumb_size;
-            instances[inst_count].tex_index = TOKEN_PANEL; // Gray backplate
-            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 0.35f : 0.2f;
+            instances[inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
+            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.75f;
             instances[inst_count].corner_radius = s->layout.thumb_radius;
+            inst_count++;
+
+            // Draw a subtle border around the folder card
+            instances[inst_count] = (InstanceData){0};
+            instances[inst_count].x = x - 1.0f * s->dpi_scale;
+            instances[inst_count].y = y - 1.0f * s->dpi_scale;
+            instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
+            instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
+            instances[inst_count].tex_index = TOKEN_BORDER;
+            instances[inst_count].opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.4f);
+            instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
             inst_count++;
         }
         else
@@ -423,6 +420,17 @@ void gal_render_gallery(HDC hdc, AppState *s)
                     s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
                 }
                 inst_count++;
+
+                // Draw a subtle border around the image card
+                instances[inst_count] = (InstanceData){0};
+                instances[inst_count].x = x - 1.0f * s->dpi_scale;
+                instances[inst_count].y = y - 1.0f * s->dpi_scale;
+                instances[inst_count].w = thumb_size + 2.0f * s->dpi_scale;
+                instances[inst_count].h = thumb_size + 2.0f * s->dpi_scale;
+                instances[inst_count].tex_index = TOKEN_BORDER;
+                instances[inst_count].opacity = (s->selected_index == i) ? 0.0f : (hovered ? 0.8f : 0.3f);
+                instances[inst_count].corner_radius = s->layout.thumb_radius + 1.0f * s->dpi_scale;
+                inst_count++;
             }
         }
 
@@ -440,8 +448,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
             inst_count++;
         }
 
-        if (inst_count >= 4090)
-            break; // Leave room for scrollbar and buttons
+        if (inst_count >= 4080)
+            break; // Leave room for scrollbar, topbar and buttons
     }
 
     // Scrollbar Update & Draw
@@ -506,16 +514,38 @@ void gal_render_gallery(HDC hdc, AppState *s)
         }
     }
 
-    // Sort Button & Dropdown Layout
+    // Top Bar Backdrop (drawn after grid items to mask scrolled overflow)
+    instances[inst_count] = (InstanceData){0};
+    instances[inst_count].x = 0.0f;
+    instances[inst_count].y = 0.0f;
+    instances[inst_count].w = (float) s->window_width;
+    instances[inst_count].h = s->layout.topbar_height;
+    instances[inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
+    instances[inst_count].opacity = 1.0f;
+    instances[inst_count].corner_radius = 0.0f;
+    inst_count++;
+
+    // Top Bar Bottom Border
+    instances[inst_count] = (InstanceData){0};
+    instances[inst_count].x = 0.0f;
+    instances[inst_count].y = s->layout.topbar_height - 1.0f * s->dpi_scale;
+    instances[inst_count].w = (float) s->window_width;
+    instances[inst_count].h = 1.0f * s->dpi_scale;
+    instances[inst_count].tex_index = TOKEN_BORDER; // One Dark border color
+    instances[inst_count].opacity = 1.0f;
+    instances[inst_count].corner_radius = 0.0f;
+    inst_count++;
+
+    // Sort Button & Dropdown Layout (compact position vertically centered in topbar)
     int btn_w = (int) (90 * s->dpi_scale);
     int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) (s->window_width - btn_w - 20 * s->dpi_scale);
-    int btn_y = (int) (10 * s->dpi_scale);
+    int btn_x = (int) (s->window_width - btn_w - 16 * s->dpi_scale);
+    int btn_y = (int) ((s->layout.topbar_height - btn_h) / 2.0f);
 
-    ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.8f, (float) pt.x,
-              (float) pt.y, 6.0f * s->dpi_scale);
+    ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0f, (float) pt.x,
+              (float) pt.y, 4.0f * s->dpi_scale);
 
-    // Draw the main gallery and button first
+    // Draw the main gallery, topbar, and button first
     r_draw_instances(s, instances, inst_count);
     inst_count = 0;
 
@@ -550,37 +580,149 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 int show_counts = (_wcsicmp(s->grid_items[i].folder_name, L"..") != 0 &&
                                    (s->grid_items[i].image_count > 0 || s->grid_items[i].folder_count > 0));
 
-                // 1. Draw folder icon
+                // 1. Draw folder icon (top-left, small 24dp size)
                 const wchar_t *icon = (_wcsicmp(s->grid_items[i].folder_name, L"..") == 0) ? L"\uEB52" : L"\uE8B7";
-                float icon_y = y + (31.0F * s->dpi_scale);
-                float icon_h = 48.0F * s->dpi_scale;
-                r_draw_text_aligned(s, icon, x, icon_y, thumb_size, icon_h, ALIGN_X_CENTER, ALIGN_Y_CENTER,
-                                    s->dwrite_format_icons_large, s->theme.accent);
+                float icon_x = x + 16.0f * s->dpi_scale;
+                float icon_y = y + 16.0f * s->dpi_scale;
+                float icon_size = 24.0f * s->dpi_scale;
+                r_draw_text_aligned(s, icon, icon_x, icon_y, icon_size, icon_size, ALIGN_X_LEFT, ALIGN_Y_CENTER,
+                                    s->dwrite_format_icons, s->theme.accent);
 
-                // 2. Draw folder counts (Option B)
+                // 2. Draw folder counts (Option B) using monospace font at the bottom-left
                 if (show_counts)
                 {
                     wchar_t count_buf[128];
                     format_folder_contents(s->grid_items[i].image_count, s->grid_items[i].folder_count, count_buf, 128);
 
-                    float count_x = x + (8.0F * s->dpi_scale);
-                    float count_y = y + (89.0F * s->dpi_scale);
-                    float count_w = thumb_size - (16.0F * s->dpi_scale);
-                    float count_h = 14.0F * s->dpi_scale;
+                    float count_x = x + 16.0f * s->dpi_scale;
+                    float count_y = y + thumb_size - 30.0f * s->dpi_scale;
+                    float count_w = thumb_size - 32.0f * s->dpi_scale;
+                    float count_h = 14.0f * s->dpi_scale;
 
-                    r_draw_text_aligned(s, count_buf, count_x, count_y, count_w, count_h, ALIGN_X_CENTER,
-                                        ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_muted);
+                    r_draw_text_aligned(s, count_buf, count_x, count_y, count_w, count_h, ALIGN_X_LEFT,
+                                        ALIGN_Y_BOTTOM, s->dwrite_format_mono_small, s->theme.text_muted);
                 }
 
-                // 3. Draw folder name
-                float name_x = x + (8.0F * s->dpi_scale);
-                float name_y = y + (109.0F * s->dpi_scale);
-                float name_w = thumb_size - (16.0F * s->dpi_scale);
-                float name_h = 24.0F * s->dpi_scale;
-                r_draw_text_aligned(s, s->grid_items[i].folder_name, name_x, name_y, name_w, name_h, ALIGN_X_CENTER,
-                                    ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
+                // 3. Draw folder name (in the middle, left-aligned)
+                float name_x = x + 16.0f * s->dpi_scale;
+                float name_y = y + 52.0f * s->dpi_scale;
+                float name_w = thumb_size - 32.0f * s->dpi_scale;
+                float name_h = 44.0f * s->dpi_scale; // wrapping space
+                r_draw_text_aligned(s, s->grid_items[i].folder_name, name_x, name_y, name_w, name_h, ALIGN_X_LEFT,
+                                    ALIGN_Y_TOP, s->dwrite_format_semibold, s->theme.text_main);
             }
         }
+    }
+
+    // Render breadcrumb / viewing path in D2D pass (memoized to avoid per-frame COM overhead)
+    float text_x = 16.0f * s->dpi_scale;
+    float text_h = 16.0f * s->dpi_scale;
+    float text_y = (s->layout.topbar_height - text_h) / 2.0f; // vertically centered
+
+    wchar_t temp_dir[MAX_PATH_LEN];
+    wcsncpy(temp_dir, s->viewing_dir, MAX_PATH_LEN - 1);
+    temp_dir[MAX_PATH_LEN - 1] = L'\0';
+    int len = (int) wcslen(temp_dir);
+    if (len > 3 && temp_dir[len - 1] == L'\\')
+    {
+        temp_dir[len - 1] = L'\0';
+    }
+
+    wchar_t *last_sep = wcsrchr(temp_dir, L'\\');
+    wchar_t parent_path[MAX_PATH_LEN] = {0};
+    wchar_t child_dir[MAX_PATH_LEN] = {0};
+
+    if (last_sep && (last_sep - temp_dir > 0) && *(last_sep + 1) != L'\0')
+    {
+        wcsncpy(parent_path, temp_dir, last_sep - temp_dir);
+        wcscpy(child_dir, last_sep + 1);
+    }
+    else
+    {
+        wcscpy(child_dir, temp_dir);
+    }
+
+    static wchar_t cached_dir[MAX_PATH_LEN] = {0};
+    static float cached_parent_w = 0.0f;
+    static float cached_dpi = 0.0f;
+
+    if (wcscmp(cached_dir, s->viewing_dir) != 0 || cached_dpi != s->dpi_scale)
+    {
+        wcsncpy(cached_dir, s->viewing_dir, MAX_PATH_LEN - 1);
+        cached_dpi = s->dpi_scale;
+
+        wchar_t parent_formatted[MAX_PATH_LEN * 2] = {0};
+        int pf_idx = 0;
+        for (int p = 0; parent_path[p] != L'\0' && pf_idx < MAX_PATH_LEN * 2 - 10; p++)
+        {
+            if (parent_path[p] == L'\\')
+            {
+                wcscpy(parent_formatted + pf_idx, L" / ");
+                pf_idx += 3;
+            }
+            else
+            {
+                parent_formatted[pf_idx++] = parent_path[p];
+            }
+        }
+        parent_formatted[pf_idx] = L'\0';
+
+        wchar_t display_parent[MAX_PATH_LEN * 2 + 32] = {0};
+        if (parent_path[0] != L'\0')
+        {
+            swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / %ls / ", parent_formatted);
+        }
+        else
+        {
+            swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / ");
+        }
+
+        // DWrite GetMetrics workaround: append a dummy character 'x' to measure trailing space width
+        wchar_t measure_buf[MAX_PATH_LEN * 2 + 64];
+        swprintf(measure_buf, sizeof(measure_buf) / sizeof(wchar_t), L"%lsx", display_parent);
+        
+        float total_w = r_measure_text_width(s, measure_buf, s->dwrite_format_small);
+        float char_w = r_measure_text_width(s, L"x", s->dwrite_format_small);
+        cached_parent_w = total_w - char_w;
+    }
+
+    // Format display_parent for drawing
+    wchar_t parent_formatted[MAX_PATH_LEN * 2] = {0};
+    int pf_idx = 0;
+    for (int p = 0; parent_path[p] != L'\0' && pf_idx < MAX_PATH_LEN * 2 - 10; p++)
+    {
+        if (parent_path[p] == L'\\')
+        {
+            wcscpy(parent_formatted + pf_idx, L" / ");
+            pf_idx += 3;
+        }
+        else
+        {
+            parent_formatted[pf_idx++] = parent_path[p];
+        }
+    }
+    parent_formatted[pf_idx] = L'\0';
+
+    wchar_t display_parent[MAX_PATH_LEN * 2 + 32] = {0};
+    if (parent_path[0] != L'\0')
+    {
+        swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / %ls / ", parent_formatted);
+    }
+    else
+    {
+        swprintf(display_parent, MAX_PATH_LEN * 2 + 32, L"calbum / ");
+    }
+
+    // Draw parent path segment in muted color using system small font
+    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0f, text_h,
+                        ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_muted);
+
+    // Draw active folder name in main color
+    float child_max_w = (float) btn_x - text_x - cached_parent_w - 10.0f;
+    if (child_max_w > 10.0f)
+    {
+        r_draw_text_aligned(s, child_dir, text_x + cached_parent_w, text_y, child_max_w, text_h,
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_main);
     }
 
     ui_button_text(s, L"Sort \x25BC", (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h);
@@ -620,7 +762,7 @@ void gal_close_full(AppState *s)
 void gal_render_fullimage(HDC hdc, AppState *s)
 {
     (void) hdc;                      // Unused parameter
-    r_clear(s, 0.08f, 0.08f, 0.08f); // Sleek darker premium background
+    r_clear(s, 0.118f, 0.133f, 0.153f); // Solid dark One Dark variant background
 
     int total_items = s->grid_items ? s->grid_item_count : s->count;
     if (total_items == 0 || s->selected_index < 0 || s->selected_index >= total_items)
@@ -1077,27 +1219,27 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         wchar_t line[256];
         swprintf(line, 256, L"Name:  %ls", name_trunc);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 1.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Path:  %ls", path_trunc);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 2.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Size:  %ls", sz_buf);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 3.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Dims:  %ls", dim_buf);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 4.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Created:  %ls", tc_buf);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 5.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
 
         swprintf(line, 256, L"Modified: %ls", tm_buf);
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + item_h * 6.2f, info_w - pad * 2.0f, item_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_regular, s->theme.text_main);
+                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
     }
 
     r_present(s);
