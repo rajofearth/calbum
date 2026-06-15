@@ -2,10 +2,9 @@
 
 > High-performance native Windows image gallery — built for speed, minimalism, and direct OS interaction.
 
-![CI](https://github.com/yashraj/calbum/workflows/CI/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Language](https://img.shields.io/badge/language-C17-555555)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GPL--2.0-blue)
 
 ---
 
@@ -117,35 +116,6 @@ The project follows **data-oriented design** principles:
 | `gallery.c`          | Gallery grid layout, UI interaction, full-image viewer, scrolling |
 | `build.c`            | Unity build master — includes all sources |
 
-### Directory Layout
-
-```
-calbum/
-├── build.c            # Unity build entry point
-├── Makefile           # Build system
-├── src/
-│   ├── main.c         # Application main
-│   ├── types.h        # Header / types
-│   ├── app.c          # Application state
-│   ├── file_scanner.c # File system scanning
-│   ├── gallery.c      # Gallery rendering and UI
-│   ├── image_loader.c # WIC Image loading
-│   ├── asset_worker.c # Background loading
-│   └── renderer.c     # D2D/DWrite rendering
-├── Makefile           # Build system
-├── .clang-format      # Code formatting rules
-├── .clang-tidy        # Static analysis configuration
-├── .github/
-│   └── workflows/
-│       └── ci.yml     # GitHub Actions CI
-├── tests/
-│   └── test_main.c    # Unit tests
-├── agents.md          # Context map for AI coding assistants
-├── README.md          # This file
-├── LICENSE            # MIT License
-└── .gitignore
-```
-
 ---
 
 ## Code Quality
@@ -172,4 +142,4 @@ This project maintains a high quality bar:
 
 ## License
 
-[MIT](LICENSE)
+[GNU General Public License v2.0](LICENSE)
