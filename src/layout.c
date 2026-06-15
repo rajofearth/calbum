@@ -29,7 +29,7 @@ void gal_calc_layout(AppState *s, GridLayout *out)
     
     out->first_visible = out->first_row * out->cols;
     out->last_visible = (out->last_row + 1) * out->cols;
-    if (out->last_visible > s->count) out->last_visible = s->count;
+    if (out->last_visible > s->grid_item_count) out->last_visible = s->grid_item_count;
 }
 
 int gal_max_scroll(AppState *s)
@@ -38,7 +38,7 @@ int gal_max_scroll(AppState *s)
     gal_calc_layout(s, &lay);
     if (lay.cols <= 0) return 0;
     
-    int total_rows = ceil_div(s->count, lay.cols);
+    int total_rows = ceil_div(s->grid_item_count, lay.cols);
     float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
     float gallery_padding = s->layout.panel_padding > 0.0f ? s->layout.panel_padding : 16.0f * dpi;
     float top_margin_h = s->layout.topbar_height > 0.0f ? s->layout.topbar_height : 0.0f;
@@ -50,7 +50,7 @@ int gal_max_scroll(AppState *s)
 
 int gal_hit_test(AppState *s, int x, int y, int *out_index)
 {
-    if (s->view_mode != VIEW_GALLERY || s->count == 0) return 0;
+    if (s->view_mode != VIEW_GALLERY || s->grid_item_count == 0) return 0;
     if (s->sort_menu_open) return 0;
     GridLayout lay;
     gal_calc_layout(s, &lay);

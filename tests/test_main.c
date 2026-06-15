@@ -18,13 +18,6 @@
 #include "lib/stb_dxt.h"
 #include "src/types.h"
 
-// Stub for file scanner dependency in tests
-ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size, uint64_t last_modified, uint64_t created_time)
-{
-    (void)s; (void)path; (void)filename; (void)file_size; (void)last_modified; (void)created_time;
-    return NULL;
-}
-
 #include "src/utils.c"
 #include "src/renderer.c"
 #include "src/layout.c"
@@ -36,6 +29,7 @@ ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar
 #include "src/asset_worker.c"
 #include "src/ui.c"
 #include "src/gallery.c"
+#include "src/app.c"
 
 // ── Test framework ──────────────────────────────────────────────────────
 static int g_run = 0, g_pass = 0, g_fail = 0;
@@ -54,6 +48,7 @@ static void setup(AppState *s, int count, int ww, int wh)
 {
     memset(s, 0, sizeof(*s));
     s->count = count;
+    s->grid_item_count = count;
     s->window_width  = ww;
     s->window_height = wh;
     s->view_mode = VIEW_GALLERY;
@@ -99,8 +94,10 @@ static void test_gal_hit_test(void)
 
     TEST("empty gallery -> no hit");
     s.count = 0;
+    s.grid_item_count = 0;
     CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "empty no hit");
     s.count = 4;
+    s.grid_item_count = 4;
     PASS();
 
     TEST("wrong view mode -> no hit");
@@ -338,6 +335,89 @@ static void test_zoom_and_recovery(void)
     PASS();
 }
 
+static void test_folders_and_strip_caching(void)
+{
+    AppState s;
+    memset(&s, 0, sizeof(s));
+    
+    // Allocate arena
+    void *arena_buf = malloc(1024 * 1024);
+    arena_init(&s.arena, arena_buf, 1024 * 1024);
+    
+    // Allocate nav_arena
+    void *nav_arena_buf = malloc(1024 * 1024);
+    arena_init(&s.nav_arena, nav_arena_buf, 1024 * 1024);
+    
+    s.count = 5;
+    s.capacity = 5;
+    s.images = arena_alloc_array(&s.arena, ImageEntry, s.count);
+    
+    s.images[0].path = L"C:\\photos\\vacation\\img1.jpg";
+    s.images[1].path = L"C:\\photos\\vacation\\img2.jpg";
+    s.images[2].path = L"C:\\photos\\work\\job1.jpg";
+    s.images[3].path = L"C:\\photos\\job2.jpg";
+    s.images[4].path = L"C:\\photos\\img_root.jpg";
+    
+    wcscpy(s.current_dir, L"C:\\photos");
+    wcscpy(s.viewing_dir, L"C:\\photos");
+    
+    s.grid_item_capacity = 256;
+    s.grid_items = arena_alloc_array(&s.arena, GridItem, s.grid_item_capacity);
+    s.strip_image_grid_indices = arena_alloc_array(&s.arena, int, s.grid_item_capacity);
+    
+    TEST("populate grid items in root folder");
+    app_populate_grid_items(&s);
+    CHECK(s.grid_item_count == 4, "grid_item_count should be 4");
+    
+    // Grid items: 2 folders (vacation, work) then 2 images (job2.jpg, img_root.jpg)
+    CHECK(s.grid_items[0].type == ITEM_FOLDER, "item 0 folder");
+    CHECK(_wcsicmp(s.grid_items[0].folder_name, L"vacation") == 0, "folder name vacation");
+    CHECK(_wcsicmp(s.grid_items[0].folder_path, L"C:\\photos\\vacation") == 0, "folder path vacation");
+    
+    CHECK(s.grid_items[1].type == ITEM_FOLDER, "item 1 folder");
+    CHECK(_wcsicmp(s.grid_items[1].folder_name, L"work") == 0, "folder name work");
+    CHECK(_wcsicmp(s.grid_items[1].folder_path, L"C:\\photos\\work") == 0, "folder path work");
+    
+    // NOTE: image_index values below correspond to the indices of job2.jpg and img_root.jpg
+    // in the s.images array (indices 3 and 4). app_populate_grid_items appends direct images
+    // in the exact order they are stored in the s.images array.
+    CHECK(s.grid_items[2].type == ITEM_IMAGE, "item 2 image");
+    CHECK(s.grid_items[2].image_index == 3, "item 2 image_index 3");
+    
+    CHECK(s.grid_items[3].type == ITEM_IMAGE, "item 3 image");
+    CHECK(s.grid_items[3].image_index == 4, "item 3 image_index 4");
+    
+    // Strip count and cached strip index checks
+    CHECK(s.strip_image_count == 2, "strip_image_count should be 2");
+    CHECK(s.strip_image_grid_indices[0] == 2, "strip idx 0 is grid idx 2");
+    CHECK(s.strip_image_grid_indices[1] == 3, "strip idx 1 is grid idx 3");
+    PASS();
+    
+    TEST("populate grid items in subfolder vacation");
+    wcscpy(s.viewing_dir, L"C:\\photos\\vacation");
+    app_populate_grid_items(&s);
+    
+    // Grid items: 1 folder (..), 2 images (img1.jpg, img2.jpg)
+    CHECK(s.grid_item_count == 3, "grid_item_count should be 3 in subfolder");
+    CHECK(s.grid_items[0].type == ITEM_FOLDER, "item 0 is folder ..");
+    CHECK(_wcsicmp(s.grid_items[0].folder_name, L"..") == 0, "folder name ..");
+    CHECK(_wcsicmp(s.grid_items[0].folder_path, L"C:\\photos") == 0, "parent path C:\\photos");
+    
+    CHECK(s.grid_items[1].type == ITEM_IMAGE, "item 1 image");
+    CHECK(s.grid_items[1].image_index == 0, "item 1 image_index 0");
+    
+    CHECK(s.grid_items[2].type == ITEM_IMAGE, "item 2 image");
+    CHECK(s.grid_items[2].image_index == 1, "item 2 image_index 1");
+    
+    CHECK(s.strip_image_count == 2, "strip count should be 2");
+    CHECK(s.strip_image_grid_indices[0] == 1, "strip idx 0 is grid idx 1");
+    CHECK(s.strip_image_grid_indices[1] == 2, "strip idx 1 is grid idx 2");
+    PASS();
+    
+    free(arena_buf);
+    free(nav_arena_buf);
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 int main(void)
 {
@@ -354,6 +434,7 @@ int main(void)
     test_extensions();
     test_fullimage_interactions();
     test_zoom_and_recovery();
+    test_folders_and_strip_caching();
 
     printf("\n========================================\n");
     printf("  Results: %d/%d passed, %d failed\n", g_pass, g_run, g_fail);

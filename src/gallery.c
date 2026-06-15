@@ -24,21 +24,21 @@ static int cmp_date_created(const void *a, const void *b) {
     ImageEntry *ea = (ImageEntry*)a; ImageEntry *eb = (ImageEntry*)b;
     if (ea->created_time < eb->created_time) return -1;
     if (ea->created_time > eb->created_time) return 1;
-    return 0;
+    return _wcsicmp(ea->path, eb->path);
 }
 
 static int cmp_date_modified(const void *a, const void *b) {
     ImageEntry *ea = (ImageEntry*)a; ImageEntry *eb = (ImageEntry*)b;
     if (ea->last_modified < eb->last_modified) return -1;
     if (ea->last_modified > eb->last_modified) return 1;
-    return 0;
+    return _wcsicmp(ea->path, eb->path);
 }
 
 static int cmp_size(const void *a, const void *b) {
     ImageEntry *ea = (ImageEntry*)a; ImageEntry *eb = (ImageEntry*)b;
     if (ea->file_size < eb->file_size) return -1;
     if (ea->file_size > eb->file_size) return 1;
-    return 0;
+    return _wcsicmp(ea->path, eb->path);
 }
 
 void gal_apply_sort(AppState *s)
@@ -47,8 +47,24 @@ void gal_apply_sort(AppState *s)
     
     // Save currently selected path
     wchar_t selected_path[MAX_PATH_LEN] = {0};
-    if (s->selected_index >= 0 && s->selected_index < s->count) {
-        wcsncpy(selected_path, s->images[s->selected_index].path, MAX_PATH_LEN-1);
+    if (s->selected_index >= 0) {
+        int limit = s->grid_items ? s->grid_item_count : s->count;
+        if (s->selected_index < limit) {
+            if (s->grid_items) {
+                if (s->grid_items[s->selected_index].type == ITEM_FOLDER) {
+                    if (s->grid_items[s->selected_index].folder_path) {
+                        wcsncpy(selected_path, s->grid_items[s->selected_index].folder_path, MAX_PATH_LEN - 1);
+                    }
+                } else {
+                    int img_idx = s->grid_items[s->selected_index].image_index;
+                    if (img_idx >= 0 && img_idx < s->count) {
+                        wcsncpy(selected_path, s->images[img_idx].path, MAX_PATH_LEN - 1);
+                    }
+                }
+            } else {
+                wcsncpy(selected_path, s->images[s->selected_index].path, MAX_PATH_LEN - 1);
+            }
+        }
     }
     
     int (*cmp)(const void*, const void*) = cmp_date_created;
@@ -66,12 +82,35 @@ void gal_apply_sort(AppState *s)
         }
     }
     
+    if (s->grid_items) {
+        app_populate_grid_items(s);
+    }
+    
     // Restore selection
     if (selected_path[0]) {
-        for (int i = 0; i < s->count; i++) {
-            if (_wcsicmp(s->images[i].path, selected_path) == 0) {
-                s->selected_index = i;
-                break;
+        if (s->grid_items) {
+            for (int i = 0; i < s->grid_item_count; i++) {
+                if (s->grid_items[i].type == ITEM_FOLDER) {
+                    if (s->grid_items[i].folder_path && _wcsicmp(s->grid_items[i].folder_path, selected_path) == 0) {
+                        s->selected_index = i;
+                        break;
+                    }
+                } else {
+                    int img_idx = s->grid_items[i].image_index;
+                    if (img_idx >= 0 && img_idx < s->count) {
+                        if (_wcsicmp(s->images[img_idx].path, selected_path) == 0) {
+                            s->selected_index = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            for (int i = 0; i < s->count; i++) {
+                if (_wcsicmp(s->images[i].path, selected_path) == 0) {
+                    s->selected_index = i;
+                    break;
+                }
             }
         }
     }
@@ -158,7 +197,8 @@ void gal_scroll(AppState *s, float delta)
 
 void gal_select_full_image(AppState *s, int index)
 {
-    if (index < 0 || index >= s->count) return;
+    int limit = s->grid_items ? s->grid_item_count : s->count;
+    if (index < 0 || index >= limit) return;
 
     s->selected_index = index;
     s->zoom_level = 1.0f;
@@ -168,7 +208,9 @@ void gal_select_full_image(AppState *s, int index)
     s->is_panning = 0;
 
     if (s->images) {
-        ImageEntry *e = &s->images[index];
+        int img_idx = (s->grid_items) ? s->grid_items[index].image_index : index;
+        if (img_idx < 0 || img_idx >= s->count) return;
+        ImageEntry *e = &s->images[img_idx];
         if (e->full_width == 0) {
             int w = 0, h = 0;
             if (il_get_image_dimensions(e->path, &w, &h)) {
@@ -191,7 +233,8 @@ void gal_select_full_image(AppState *s, int index)
 
 void gal_open_full(AppState *s, int index)
 {
-    if (index < 0 || index >= s->count) return;
+    int limit = s->grid_items ? s->grid_item_count : s->count;
+    if (index < 0 || index >= limit) return;
     s->view_mode = VIEW_FULLIMAGE;
     gal_select_full_image(s, index);
 }
@@ -201,7 +244,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
     (void)hdc; // Unused parameter
     r_clear(s, 0.12f, 0.12f, 0.12f);
 
-    if (s->count == 0) {
+    int total_items = s->grid_items ? s->grid_item_count : s->count;
+    if (total_items == 0) {
         r_present(s);
         return;
     }
@@ -224,11 +268,6 @@ void gal_render_gallery(HDC hdc, AppState *s)
         float y = (float)(s->layout.topbar_height + s->layout.panel_padding + row * lay.pad - lay.scroll_int);
 
         if (y + thumb_size < 0 || y > s->window_height) continue;
-
-        if (s->images[i].texture_slot == -1 && !s->images[i].thumb_requested) {
-            s->images[i].thumb_requested = 1;
-            aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
-        }
 
         int hovered = ui_is_hovered(x, y, thumb_size, thumb_size, (float)pt.x, (float)pt.y);
 
@@ -257,21 +296,44 @@ void gal_render_gallery(HDC hdc, AppState *s)
             inst_count++;
         }
 
-        // Draw main thumbnail
-        instances[inst_count] = (InstanceData){0};
-        instances[inst_count].x = x;
-        instances[inst_count].y = y;
-        instances[inst_count].w = thumb_size;
-        instances[inst_count].h = thumb_size;
-        instances[inst_count].tex_index = (s->images[i].state == IMG_STATE_RESIDENT_GPU) ? s->images[i].texture_slot : TOKEN_DEFAULT;
-        instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.85f;
-        instances[inst_count].corner_radius = s->layout.thumb_radius;
-        
-        if (s->images[i].state == IMG_STATE_RESIDENT_GPU && s->images[i].texture_slot != -1) {
-            s->tex_pool.last_used[s->images[i].texture_slot] = s->tex_pool.frame_counter;
+        GridItemType type = s->grid_items ? s->grid_items[i].type : ITEM_IMAGE;
+        int img_idx = s->grid_items ? s->grid_items[i].image_index : i;
+
+        if (type == ITEM_FOLDER) {
+            // Draw main folder backplate card
+            instances[inst_count] = (InstanceData){0};
+            instances[inst_count].x = x;
+            instances[inst_count].y = y;
+            instances[inst_count].w = thumb_size;
+            instances[inst_count].h = thumb_size;
+            instances[inst_count].tex_index = TOKEN_PANEL; // Gray backplate
+            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 0.35f : 0.2f;
+            instances[inst_count].corner_radius = s->layout.thumb_radius;
+            inst_count++;
+        } else {
+            // Draw main image thumbnail
+            if (img_idx >= 0 && img_idx < s->count) {
+                if (s->images[img_idx].texture_slot == -1 && !s->images[img_idx].thumb_requested) {
+                    s->images[img_idx].thumb_requested = 1;
+                    aw_request_thumbnail(s, s->images[img_idx].path, THUMB_SIZE, s->hwnd);
+                }
+
+                instances[inst_count] = (InstanceData){0};
+                instances[inst_count].x = x;
+                instances[inst_count].y = y;
+                instances[inst_count].w = thumb_size;
+                instances[inst_count].h = thumb_size;
+                instances[inst_count].tex_index = (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU) ? s->images[img_idx].texture_slot : TOKEN_DEFAULT;
+                instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0f : 0.85f;
+                instances[inst_count].corner_radius = s->layout.thumb_radius;
+
+                if (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU && s->images[img_idx].texture_slot != -1) {
+                    s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
+                }
+                inst_count++;
+            }
         }
 
-        inst_count++;
         if (inst_count >= 4090) break; // Leave room for scrollbar and buttons
     }
 
@@ -349,6 +411,31 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
     r_draw_instances(s, instances, inst_count);
 
+    // Render Folder text & icons in D2D pass
+    if (s->grid_items) {
+        for (int i = lay.first_visible; i < lay.last_visible; i++) {
+            if (s->grid_items[i].type == ITEM_FOLDER) {
+                int row = i / lay.cols, col = i % lay.cols;
+                float x = (float)(lay.left_margin + col * lay.pad);
+                float y = (float)(s->layout.topbar_height + s->layout.panel_padding + row * lay.pad - lay.scroll_int);
+
+                if (y + thumb_size < 0 || y > s->window_height) continue;
+
+                // 1. Draw folder icon
+                const wchar_t *icon = (_wcsicmp(s->grid_items[i].folder_name, L"..") == 0) ? L"\uEB52" : L"\uE8B7";
+                float icon_y = y + 16.0f * s->dpi_scale;
+                r_draw_text_aligned(s, icon, x, icon_y, thumb_size, thumb_size - 44.0f * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons_large, s->theme.accent);
+
+                // 2. Draw folder name
+                float name_x = x + 8.0f * s->dpi_scale;
+                float name_y = y + thumb_size - 36.0f * s->dpi_scale;
+                float name_w = thumb_size - 16.0f * s->dpi_scale;
+                float name_h = 24.0f * s->dpi_scale;
+                r_draw_text_aligned(s, s->grid_items[i].folder_name, name_x, name_y, name_w, name_h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
+            }
+        }
+    }
+
     ui_button_text(s, L"Sort \x25BC", (float)btn_x, (float)btn_y, (float)btn_w, (float)btn_h);
 
     if (s->sort_menu_open) {
@@ -386,14 +473,21 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     (void)hdc; // Unused parameter
     r_clear(s, 0.08f, 0.08f, 0.08f); // Sleek darker premium background
 
-    if (s->count == 0 || s->selected_index < 0 || s->selected_index >= s->count) {
+    int total_items = s->grid_items ? s->grid_item_count : s->count;
+    if (total_items == 0 || s->selected_index < 0 || s->selected_index >= total_items) {
+        r_present(s);
+        return;
+    }
+
+    int active_img_idx = s->grid_items ? s->grid_items[s->selected_index].image_index : s->selected_index;
+    if (active_img_idx < 0 || active_img_idx >= s->count) {
         r_present(s);
         return;
     }
 
     // Try loading full-resolution image when debounce delay has expired
     if (s->images && s->full_load_timer <= 0.0) {
-        if (r_load_full_image(s, s->images[s->selected_index].path)) {
+        if (r_load_full_image(s, s->images[active_img_idx].path)) {
             // Preload ALL visible images in the bottom strip in memory parallelly (staggered, 1 per frame)
             float main_w = (float)s->window_width - 40.0f * s->dpi_scale;
             float avail_w = main_w - 100.0f * s->dpi_scale;
@@ -403,24 +497,58 @@ void gal_render_fullimage(HDC hdc, AppState *s)
 
             int num_strip_thumbs = (int)(avail_w / col_w);
             if (num_strip_thumbs < 1) num_strip_thumbs = 1;
-            if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
 
-            int half_n = num_strip_thumbs / 2;
-            int start_idx = s->selected_index - half_n;
-            if (start_idx < 0) start_idx = 0;
-            int end_idx = start_idx + num_strip_thumbs - 1;
-            if (end_idx >= s->count) {
-                end_idx = s->count - 1;
-                start_idx = end_idx - num_strip_thumbs + 1;
+            if (s->grid_items && s->strip_image_count > 0) {
+                int active_img_idx_in_strip = -1;
+                for (int i = 0; i < s->strip_image_count; i++) {
+                    if (s->strip_image_grid_indices[i] == s->selected_index) {
+                        active_img_idx_in_strip = i;
+                        break;
+                    }
+                }
+
+                if (active_img_idx_in_strip != -1) {
+                    int half_n = num_strip_thumbs / 2;
+                    int start_strip_idx = active_img_idx_in_strip - half_n;
+                    if (start_strip_idx < 0) start_strip_idx = 0;
+                    int end_strip_idx = start_strip_idx + num_strip_thumbs - 1;
+                    if (end_strip_idx >= s->strip_image_count) {
+                        end_strip_idx = s->strip_image_count - 1;
+                        start_strip_idx = end_strip_idx - num_strip_thumbs + 1;
+                        if (start_strip_idx < 0) start_strip_idx = 0;
+                    }
+
+                    for (int k = start_strip_idx; k <= end_strip_idx; k++) {
+                        int grid_idx = s->strip_image_grid_indices[k];
+                        if (grid_idx == s->selected_index) continue;
+                        int img_idx = s->grid_items[grid_idx].image_index;
+                        if (!r_get_full_image_slot(s, s->images[img_idx].path)) {
+                            r_load_full_image(s, s->images[img_idx].path);
+                            s->needs_redraw = 1; // trigger another render on next frame to stagger load
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Fallback for tests
+                int num_strip_thumbs_fallback = num_strip_thumbs > s->count ? s->count : num_strip_thumbs;
+                int half_n = num_strip_thumbs_fallback / 2;
+                int start_idx = s->selected_index - half_n;
                 if (start_idx < 0) start_idx = 0;
-            }
+                int end_idx = start_idx + num_strip_thumbs_fallback - 1;
+                if (end_idx >= s->count) {
+                    end_idx = s->count - 1;
+                    start_idx = end_idx - num_strip_thumbs_fallback + 1;
+                    if (start_idx < 0) start_idx = 0;
+                }
 
-            for (int i = start_idx; i <= end_idx; i++) {
-                if (i == s->selected_index) continue;
-                if (!r_get_full_image_slot(s, s->images[i].path)) {
-                    r_load_full_image(s, s->images[i].path);
-                    s->needs_redraw = 1; // trigger another render on next frame to stagger load
-                    break;
+                for (int i = start_idx; i <= end_idx; i++) {
+                    if (i == s->selected_index) continue;
+                    if (!r_get_full_image_slot(s, s->images[i].path)) {
+                        r_load_full_image(s, s->images[i].path);
+                        s->needs_redraw = 1; // trigger another render on next frame to stagger load
+                        break;
+                    }
                 }
             }
         }
@@ -436,7 +564,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     float main_h = (float)s->window_height - (s->layout.topbar_height + 160.0f * s->dpi_scale);
 
     if (main_w > 0 && main_h > 0) {
-        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, s->images[s->selected_index].path) : NULL;
+        FullImageSlot *slot = s->images ? r_get_full_image_slot(s, s->images[active_img_idx].path) : NULL;
         if (slot && slot->w > 0 && slot->h > 0) {
             // Render with true aspect ratio, zoom & panning!
             float img_w = (float)slot->w;
@@ -521,60 +649,84 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     int thumb_pad = (int)(10 * s->dpi_scale);
     int col_w = thumb_w + thumb_pad;
 
-    int num_strip_thumbs = (int)(avail_w / col_w);
-    if (num_strip_thumbs < 1) num_strip_thumbs = 1;
-    if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+    int start_idx = 0;
+    int end_idx = 0;
+    int active_img_idx_in_strip = -1;
+    int total_images = 0;
 
-    int half_n = num_strip_thumbs / 2;
-    int start_idx = s->selected_index - half_n;
-    if (start_idx < 0) start_idx = 0;
-    int end_idx = start_idx + num_strip_thumbs - 1;
-    if (end_idx >= s->count) {
-        end_idx = s->count - 1;
-        start_idx = end_idx - num_strip_thumbs + 1;
-        if (start_idx < 0) start_idx = 0;
+    if (s->grid_items && s->strip_image_count > 0) {
+        total_images = s->strip_image_count;
+        for (int i = 0; i < s->strip_image_count; i++) {
+            if (s->strip_image_grid_indices[i] == s->selected_index) {
+                active_img_idx_in_strip = i;
+                break;
+            }
+        }
+    } else {
+        total_images = s->count;
+        active_img_idx_in_strip = s->selected_index;
     }
 
-    float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
-    float thumbs_start_x = 55.0f * s->dpi_scale + (avail_w - total_thumbs_w) / 2.0f;
+    if (total_images > 0 && active_img_idx_in_strip != -1) {
+        int num_strip_thumbs = (int)(avail_w / col_w);
+        if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+        if (num_strip_thumbs > total_images) num_strip_thumbs = total_images;
 
-    for (int i = start_idx; i <= end_idx; i++) {
-        float tx = thumbs_start_x + (float)((i - start_idx) * col_w);
-        float ty = strip_y + 10.0f * s->dpi_scale;
-
-        // Lazy load strip thumbnails
-        if (s->images[i].texture_slot == -1 && !s->images[i].thumb_requested) {
-            s->images[i].thumb_requested = 1;
-            aw_request_thumbnail(s, s->images[i].path, THUMB_SIZE, s->hwnd);
+        int half_n = num_strip_thumbs / 2;
+        start_idx = active_img_idx_in_strip - half_n;
+        if (start_idx < 0) start_idx = 0;
+        end_idx = start_idx + num_strip_thumbs - 1;
+        if (end_idx >= total_images) {
+            end_idx = total_images - 1;
+            start_idx = end_idx - num_strip_thumbs + 1;
+            if (start_idx < 0) start_idx = 0;
         }
 
-        // Draw selection border if active
-        if (i == s->selected_index) {
+        float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
+        float thumbs_start_x = 55.0f * s->dpi_scale + (avail_w - total_thumbs_w) / 2.0f;
+
+        for (int k = start_idx; k <= end_idx; k++) {
+            int i = (s->grid_items && s->strip_image_count > 0) ? s->strip_image_grid_indices[k] : k;
+            int img_idx = s->grid_items ? s->grid_items[i].image_index : i;
+            if (img_idx < 0 || img_idx >= s->count) continue;
+
+            float tx = thumbs_start_x + (float)((k - start_idx) * col_w);
+            float ty = strip_y + 10.0f * s->dpi_scale;
+
+            // Lazy load strip thumbnails
+            if (s->images[img_idx].texture_slot == -1 && !s->images[img_idx].thumb_requested) {
+                s->images[img_idx].thumb_requested = 1;
+                aw_request_thumbnail(s, s->images[img_idx].path, THUMB_SIZE, s->hwnd);
+            }
+
+            // Draw selection border if active
+            if (i == s->selected_index) {
+                instances[inst_count] = (InstanceData){0};
+                instances[inst_count].x = tx - 4.0f * s->dpi_scale;
+                instances[inst_count].y = ty - 4.0f * s->dpi_scale;
+                instances[inst_count].w = (float)(thumb_w + 8.0f * s->dpi_scale);
+                instances[inst_count].h = (float)(thumb_h + 8.0f * s->dpi_scale);
+                instances[inst_count].tex_index = TOKEN_ACCENT; // Accent border
+                instances[inst_count].opacity = 1.0f;
+                instances[inst_count].corner_radius = 8.0f * s->dpi_scale;
+                inst_count++;
+            }
+
+            // Draw thumbnail
             instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = tx - 4.0f * s->dpi_scale;
-            instances[inst_count].y = ty - 4.0f * s->dpi_scale;
-            instances[inst_count].w = (float)(thumb_w + 8.0f * s->dpi_scale);
-            instances[inst_count].h = (float)(thumb_h + 8.0f * s->dpi_scale);
-            instances[inst_count].tex_index = TOKEN_ACCENT; // Accent border
+            instances[inst_count].x = tx;
+            instances[inst_count].y = ty;
+            instances[inst_count].w = (float)thumb_w;
+            instances[inst_count].h = (float)thumb_h;
+            instances[inst_count].tex_index = s->images[img_idx].texture_slot;
             instances[inst_count].opacity = 1.0f;
-            instances[inst_count].corner_radius = 8.0f * s->dpi_scale;
+            instances[inst_count].corner_radius = 6.0f * s->dpi_scale;
+
+            if (s->images[img_idx].texture_slot != -1) {
+                s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
+            }
             inst_count++;
         }
-
-        // Draw thumbnail
-        instances[inst_count] = (InstanceData){0};
-        instances[inst_count].x = tx;
-        instances[inst_count].y = ty;
-        instances[inst_count].w = (float)thumb_w;
-        instances[inst_count].h = (float)thumb_h;
-        instances[inst_count].tex_index = s->images[i].texture_slot;
-        instances[inst_count].opacity = 1.0f;
-        instances[inst_count].corner_radius = 6.0f * s->dpi_scale;
-
-        if (s->images[i].texture_slot != -1) {
-            s->tex_pool.last_used[s->images[i].texture_slot] = s->tex_pool.frame_counter;
-        }
-        inst_count++;
     }
 
     // --- 5. Info Overlay Box ---
@@ -627,7 +779,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
 
     // Draw Metadata Card details
     if (s->info_open) {
-        ImageEntry *e = &s->images[s->selected_index];
+        ImageEntry *e = &s->images[active_img_idx];
         if (e->full_width == 0) {
             int w = 0, h = 0;
             if (il_get_image_dimensions(e->path, &w, &h)) {
@@ -783,20 +935,36 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
     float strip_h = 130.0f * dpi;
 
     if (y >= strip_y && y <= strip_y + strip_h) {
+        int active_img_idx_in_strip = -1;
+        int total_images = 0;
+
+        if (s->grid_items && s->strip_image_count > 0) {
+            total_images = s->strip_image_count;
+            for (int i = 0; i < s->strip_image_count; i++) {
+                if (s->strip_image_grid_indices[i] == s->selected_index) {
+                    active_img_idx_in_strip = i;
+                    break;
+                }
+            }
+        } else {
+            total_images = s->count;
+            active_img_idx_in_strip = s->selected_index;
+        }
+
         // Prev Arrow circular button hit test
         if (x >= 20 * dpi && x <= 50 * dpi && y >= strip_y + 35.0f * dpi && y <= strip_y + 65.0f * dpi) {
-            int new_idx = s->selected_index - 1;
-            if (new_idx >= 0) {
-                gal_select_full_image(s, new_idx);
+            if (active_img_idx_in_strip > 0) {
+                int new_grid_idx = (s->grid_items && s->strip_image_count > 0) ? s->strip_image_grid_indices[active_img_idx_in_strip - 1] : active_img_idx_in_strip - 1;
+                gal_select_full_image(s, new_grid_idx);
             }
             return 1;
         }
 
         // Next Arrow circular button hit test
         if (x >= s->window_width - 50 * dpi && x <= s->window_width - 20 * dpi && y >= strip_y + 35.0f * dpi && y <= strip_y + 65.0f * dpi) {
-            int new_idx = s->selected_index + 1;
-            if (new_idx < s->count) {
-                gal_select_full_image(s, new_idx);
+            if (active_img_idx_in_strip >= 0 && active_img_idx_in_strip < total_images - 1) {
+                int new_grid_idx = (s->grid_items && s->strip_image_count > 0) ? s->strip_image_grid_indices[active_img_idx_in_strip + 1] : active_img_idx_in_strip + 1;
+                gal_select_full_image(s, new_grid_idx);
             }
             return 1;
         }
@@ -807,35 +975,58 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         int thumb_pad = (int)(10 * dpi);
         int col_w = thumb_w + thumb_pad;
 
-        int num_strip_thumbs = (int)(avail_w / col_w);
-        if (num_strip_thumbs < 1) num_strip_thumbs = 1;
-        if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
+        if (total_images > 0 && active_img_idx_in_strip != -1) {
+            int num_strip_thumbs = (int)(avail_w / col_w);
+            if (num_strip_thumbs < 1) num_strip_thumbs = 1;
+            if (num_strip_thumbs > total_images) num_strip_thumbs = total_images;
 
-        int half_n = num_strip_thumbs / 2;
-        int start_idx = s->selected_index - half_n;
-        if (start_idx < 0) start_idx = 0;
-        int end_idx = start_idx + num_strip_thumbs - 1;
-        if (end_idx >= s->count) {
-            end_idx = s->count - 1;
-            start_idx = end_idx - num_strip_thumbs + 1;
+            int half_n = num_strip_thumbs / 2;
+            int start_idx = active_img_idx_in_strip - half_n;
             if (start_idx < 0) start_idx = 0;
-        }
+            int end_idx = start_idx + num_strip_thumbs - 1;
+            if (end_idx >= total_images) {
+                end_idx = total_images - 1;
+                start_idx = end_idx - num_strip_thumbs + 1;
+                if (start_idx < 0) start_idx = 0;
+            }
 
-        float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
-        float thumbs_start_x = 55.0f * dpi + (avail_w - total_thumbs_w) / 2.0f;
+            float total_thumbs_w = (float)(num_strip_thumbs * thumb_w + (num_strip_thumbs - 1) * thumb_pad);
+            float thumbs_start_x = 55.0f * dpi + (avail_w - total_thumbs_w) / 2.0f;
 
-        for (int i = start_idx; i <= end_idx; i++) {
-            float tx = thumbs_start_x + (float)((i - start_idx) * col_w);
-            float ty = strip_y + 10.0f * dpi;
+            for (int k = start_idx; k <= end_idx; k++) {
+                int i = (s->grid_items && s->strip_image_count > 0) ? s->strip_image_grid_indices[k] : k;
+                float tx = thumbs_start_x + (float)((k - start_idx) * col_w);
+                float ty = strip_y + 10.0f * dpi;
 
-            if (x >= tx && x <= tx + thumb_w && y >= ty && y <= ty + thumb_w) {
-                if (s->selected_index != i) {
-                    gal_select_full_image(s, i);
+                if (x >= tx && x <= tx + thumb_w && y >= ty && y <= ty + thumb_w) {
+                    if (s->selected_index != i) {
+                        gal_select_full_image(s, i);
+                    }
+                    return 1;
                 }
-                return 1;
             }
         }
     }
 
     return closed_info;
+}
+
+void gal_activate_item(AppState *s, int idx)
+{
+    int limit = s->grid_items ? s->grid_item_count : s->count;
+    if (idx < 0 || idx >= limit) return;
+
+    if (s->grid_items && s->grid_items[idx].type == ITEM_FOLDER) {
+        if (!s->grid_items[idx].folder_path) return;
+        wcsncpy(s->viewing_dir, s->grid_items[idx].folder_path, MAX_PATH_LEN - 1);
+        s->viewing_dir[MAX_PATH_LEN - 1] = L'\0';
+        app_populate_grid_items(s);
+        s->scroll_target_y = s->scroll_current_y = 0.0f;
+        s->selected_index = 0;
+        gal_update_layout(s);
+        app_update_title(s);
+        s->needs_redraw = 1;
+    } else {
+        gal_open_full(s, idx);
+    }
 }

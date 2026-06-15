@@ -204,6 +204,18 @@ typedef enum {
     IMG_STATE_FAILED = 4
 } ImageState;
 
+typedef enum {
+    ITEM_FOLDER,
+    ITEM_IMAGE
+} GridItemType;
+
+typedef struct {
+    uint8_t type;
+    int image_index;            // Index into s->images if ITEM_IMAGE
+    const wchar_t *folder_name; // Allocated in nav_arena if ITEM_FOLDER
+    const wchar_t *folder_path; // Allocated in nav_arena if ITEM_FOLDER
+} GridItem;
+
 // A single image entry — packed into a flat, cache-friendly array.
 typedef struct {
     wchar_t *path;
@@ -320,6 +332,7 @@ typedef struct AppState {
     struct IDWriteTextFormat*      dwrite_format_semibold;
     struct IDWriteTextFormat*      dwrite_format_regular;
     struct IDWriteTextFormat*      dwrite_format_icons;
+    struct IDWriteTextFormat*      dwrite_format_icons_large;
     struct ID2D1SolidColorBrush*   d2d_brush;
 
     ID3D11VertexShader*     vs;
@@ -367,6 +380,15 @@ typedef struct AppState {
     // Current directory
     wchar_t     current_dir[MAX_PATH_LEN];
 
+    // Folder navigation state
+    wchar_t     viewing_dir[MAX_PATH_LEN];
+    GridItem   *grid_items;
+    int         grid_item_count;
+    int         grid_item_capacity;
+    int        *strip_image_grid_indices;
+    int         strip_image_count;
+    Arena       nav_arena;
+
 #define FULL_CACHE_SIZE 32
 
     // High-Resolution Cache Pool & preloading Pipeline
@@ -405,7 +427,9 @@ void  app_shutdown(AppState *s);
 void  app_load_folder(AppState *s, const wchar_t *path);
 void  app_update_title(AppState *s);
 void  get_pictures_folder(wchar_t *buf, int len);
+void  get_parent_dir(const wchar_t *path, wchar_t *out, int max_len);
 ImageEntry* app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size, uint64_t last_modified, uint64_t created_time);
+void  app_populate_grid_items(AppState *s);
 
 
 // file_scanner.c
@@ -445,6 +469,7 @@ void  gal_open_full(AppState *s, int index);
 void  gal_close_full(AppState *s);
 void  gal_select_full_image(AppState *s, int index);
 void  gal_tick_smooth_scroll(AppState *s);
+void  gal_activate_item(AppState *s, int idx);
 
 // renderer.c
 typedef struct {

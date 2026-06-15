@@ -221,6 +221,10 @@ int r_init(AppState *s)
             s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
             DWRITE_FONT_STRETCH_NORMAL, 18.0f, L"en-US", &s->dwrite_format_icons);
             
+        s->dwrite_factory->lpVtbl->CreateTextFormat(
+            s->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, 
+            DWRITE_FONT_STRETCH_NORMAL, 48.0f, L"en-US", &s->dwrite_format_icons_large);
+            
         // Default mapping to keep old code happy
         s->dwrite_format = s->dwrite_format_regular;
     }
@@ -458,6 +462,7 @@ void r_shutdown(AppState *s)
     if (s->dwrite_format_regular) ((IUnknown*)s->dwrite_format_regular)->lpVtbl->Release((IUnknown*)s->dwrite_format_regular);
     if (s->dwrite_format_semibold) ((IUnknown*)s->dwrite_format_semibold)->lpVtbl->Release((IUnknown*)s->dwrite_format_semibold);
     if (s->dwrite_format_icons) ((IUnknown*)s->dwrite_format_icons)->lpVtbl->Release((IUnknown*)s->dwrite_format_icons);
+    if (s->dwrite_format_icons_large) ((IUnknown*)s->dwrite_format_icons_large)->lpVtbl->Release((IUnknown*)s->dwrite_format_icons_large);
     if (s->dwrite_factory) ((IUnknown*)s->dwrite_factory)->lpVtbl->Release((IUnknown*)s->dwrite_factory);
     if (s->d2d_rtv) ((IUnknown*)s->d2d_rtv)->lpVtbl->Release((IUnknown*)s->d2d_rtv);
     if (s->d2d_factory) ((IUnknown*)s->d2d_factory)->lpVtbl->Release((IUnknown*)s->d2d_factory);
@@ -498,37 +503,54 @@ int r_alloc_full_image_slot(AppState *s)
         }
     }
 
-    int start_idx = 0;
-    int end_idx = 0;
-    if (s->images && s->count > 0) {
-        float main_w = (float)s->window_width - 40.0f;
-        float avail_w = main_w - 100.0f;
-        int thumb_w = 80;
-        int thumb_pad = 10;
+    int start_strip_idx = 0;
+    int end_strip_idx = -1;
+    if (s->images && s->strip_image_count > 0) {
+        float dpi = s->dpi_scale > 0.0f ? s->dpi_scale : 1.0f;
+        float main_w = (float)s->window_width - 40.0f * dpi;
+        float avail_w = main_w - 100.0f * dpi;
+        int thumb_w = (int)(80 * dpi);
+        int thumb_pad = (int)(10 * dpi);
         int col_w = thumb_w + thumb_pad;
 
         int num_strip_thumbs = (int)(avail_w / col_w);
         if (num_strip_thumbs < 1) num_strip_thumbs = 1;
-        if (num_strip_thumbs > s->count) num_strip_thumbs = s->count;
 
-        int half_n = num_strip_thumbs / 2;
-        start_idx = s->selected_index - half_n;
-        if (start_idx < 0) start_idx = 0;
-        end_idx = start_idx + num_strip_thumbs - 1;
-        if (end_idx >= s->count) {
-            end_idx = s->count - 1;
-            start_idx = end_idx - num_strip_thumbs + 1;
-            if (start_idx < 0) start_idx = 0;
+        // Find active image in strip
+        int active_img_idx_in_strip = -1;
+        for (int i = 0; i < s->strip_image_count; i++) {
+            if (s->strip_image_grid_indices[i] == s->selected_index) {
+                active_img_idx_in_strip = i;
+                break;
+            }
+        }
+
+        if (active_img_idx_in_strip != -1) {
+            int half_n = num_strip_thumbs / 2;
+            start_strip_idx = active_img_idx_in_strip - half_n;
+            if (start_strip_idx < 0) start_strip_idx = 0;
+            end_strip_idx = start_strip_idx + num_strip_thumbs - 1;
+            if (end_strip_idx >= s->strip_image_count) {
+                end_strip_idx = s->strip_image_count - 1;
+                start_strip_idx = end_strip_idx - num_strip_thumbs + 1;
+                if (start_strip_idx < 0) start_strip_idx = 0;
+            }
         }
     }
 
     for (int i = 0; i < FULL_CACHE_SIZE; i++) {
         int in_strip = 0;
-        if (s->images) {
-            for (int k = start_idx; k <= end_idx; k++) {
-                if (_wcsicmp(s->full_slots[i].path, s->images[k].path) == 0) {
-                    in_strip = 1;
-                    break;
+        if (s->images && s->grid_items && s->strip_image_count > 0 && end_strip_idx >= start_strip_idx) {
+            for (int k = start_strip_idx; k <= end_strip_idx; k++) {
+                int grid_idx = s->strip_image_grid_indices[k];
+                if (grid_idx >= 0 && grid_idx < s->grid_item_count) {
+                    int img_idx = s->grid_items[grid_idx].image_index;
+                    if (img_idx >= 0 && img_idx < s->count) {
+                        if (_wcsicmp(s->full_slots[i].path, s->images[img_idx].path) == 0) {
+                            in_strip = 1;
+                            break;
+                        }
+                    }
                 }
             }
         }

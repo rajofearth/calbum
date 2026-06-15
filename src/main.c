@@ -34,15 +34,42 @@ static AppState g_state;
 
 static int image_select_offset(AppState *s, int delta)
 {
-    int new_idx = s->selected_index + delta;
-    if (new_idx < 0 || new_idx >= s->count) return 0;
     if (s->view_mode == VIEW_FULLIMAGE) {
-        gal_select_full_image(s, new_idx);
+        if (s->grid_items && s->strip_image_count > 0) {
+            int active_idx = -1;
+            for (int i = 0; i < s->strip_image_count; i++) {
+                if (s->strip_image_grid_indices[i] == s->selected_index) {
+                    active_idx = i;
+                    break;
+                }
+            }
+            if (active_idx != -1) {
+                int new_active_idx = active_idx + delta;
+                if (new_active_idx >= 0 && new_active_idx < s->strip_image_count) {
+                    gal_select_full_image(s, s->strip_image_grid_indices[new_active_idx]);
+                    return 1;
+                }
+            }
+            return 0;
+        } else {
+            // Fallback for tests
+            int new_idx = s->selected_index + delta;
+            if (new_idx >= 0 && new_idx < s->count) {
+                gal_select_full_image(s, new_idx);
+                return 1;
+            }
+            return 0;
+        }
     } else {
-        s->selected_index = new_idx;
-        s->needs_redraw = 1;
+        int limit = s->grid_items ? s->grid_item_count : s->count;
+        int new_idx = s->selected_index + delta;
+        if (new_idx >= 0 && new_idx < limit) {
+            s->selected_index = new_idx;
+            s->needs_redraw = 1;
+            return 1;
+        }
+        return 0;
     }
-    return 1;
 }
 
 static void theme_init(AppState *s)
@@ -145,7 +172,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
 
         ImageEntry *e = app_append_image_entry(s, fc->path, fc->filename, file_size, last_modified, created_time);
         if (e) {
-            gal_apply_sort(s);
+            gal_apply_sort(s); // Note: gal_apply_sort internally calls app_populate_grid_items(s) if grid_items is active
             gal_update_layout(s);
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd, NULL, TRUE);
@@ -163,6 +190,18 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 if (remaining > 0)
                     memmove(&s->images[i], &s->images[i+1], remaining * sizeof(ImageEntry));
                 s->count--;
+                if (s->grid_items) {
+                    app_populate_grid_items(s);
+                }
+                int limit = s->grid_items ? s->grid_item_count : s->count;
+                if (s->selected_index >= limit) {
+                    s->selected_index = limit - 1;
+                }
+                if (limit == 0) {
+                    s->selected_index = -1;
+                } else if (s->selected_index < 0) {
+                    s->selected_index = 0;
+                }
                 gal_update_layout(s);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
@@ -224,6 +263,7 @@ static void on_keydown(HWND hwnd, int vk)
     if (g_state.view_mode == VIEW_FULLIMAGE) {
         switch (vk) {
         case VK_ESCAPE: gal_close_full(&g_state); InvalidateRect(hwnd,NULL,TRUE); break;
+        case VK_BACK:   gal_close_full(&g_state); InvalidateRect(hwnd,NULL,TRUE); break;
         case VK_LEFT:  case VK_UP:
             if (image_select_offset(&g_state,-1)) InvalidateRect(hwnd,NULL,TRUE);
             break;
@@ -254,10 +294,26 @@ static void on_keydown(HWND hwnd, int vk)
         switch (vk) {
         case VK_RETURN: case VK_SPACE:
             if (g_state.selected_index >= 0) {
-                gal_open_full(&g_state, g_state.selected_index);
+                gal_activate_item(&g_state, g_state.selected_index);
                 InvalidateRect(hwnd,NULL,TRUE);
             }
             break;
+        case VK_BACK: {
+            if (_wcsicmp(g_state.viewing_dir, g_state.current_dir) != 0) {
+                wchar_t parent[MAX_PATH_LEN];
+                get_parent_dir(g_state.viewing_dir, parent, MAX_PATH_LEN);
+                wcsncpy(g_state.viewing_dir, parent, MAX_PATH_LEN - 1);
+                g_state.viewing_dir[MAX_PATH_LEN - 1] = L'\0';
+                app_populate_grid_items(&g_state);
+                g_state.scroll_target_y = g_state.scroll_current_y = 0.0f;
+                g_state.selected_index = 0;
+                gal_update_layout(&g_state);
+                app_update_title(&g_state);
+                g_state.needs_redraw = 1;
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            break;
+        }
         case VK_LEFT:  case VK_UP:
             if (image_select_offset(&g_state,-1)) InvalidateRect(hwnd,NULL,TRUE);
             break;
@@ -269,11 +325,13 @@ static void on_keydown(HWND hwnd, int vk)
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd,NULL,TRUE);
             break;
-        case VK_END:
-            g_state.selected_index = g_state.count - 1;
+        case VK_END: {
+            int limit = g_state.grid_items ? g_state.grid_item_count : g_state.count;
+            g_state.selected_index = limit - 1;
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd,NULL,TRUE);
             break;
+        }
         }
     }
 }
@@ -374,7 +432,7 @@ static void on_lbutton_dblclk(HWND hwnd, int x, int y)
     if (g_state.view_mode != VIEW_GALLERY) return;
     int idx;
     if (gal_hit_test(&g_state, x, y, &idx)) {
-        gal_open_full(&g_state, idx);
+        gal_activate_item(&g_state, idx);
         InvalidateRect(hwnd,NULL,TRUE);
     }
 }
