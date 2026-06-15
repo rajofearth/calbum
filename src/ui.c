@@ -9,9 +9,11 @@ int ui_is_hovered(float x, float y, float w, float h, float mx, float my)
     return (mx >= x && mx <= x + w && my >= y && my <= y + h);
 }
 
-void ui_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int has_border, float corner_radius)
+void ui_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity,
+              int has_border, float corner_radius)
 {
-    if (has_border) {
+    if (has_border)
+    {
         // Draw soft drop shadow behind the panel (extended 12px, offset down 6px)
         float shadow_padding = 12.0f;
         instances[*inst_count].x = x - shadow_padding;
@@ -30,7 +32,7 @@ void ui_panel(InstanceData *instances, int *inst_count, float x, float y, float 
         instances[*inst_count].w = w + 2.0f;
         instances[*inst_count].h = h + 2.0f;
         instances[*inst_count].tex_index = TOKEN_BORDER; // White color
-        instances[*inst_count].opacity = 0.5f; // Translucent
+        instances[*inst_count].opacity = 0.5f;           // Translucent
         instances[*inst_count].corner_radius = corner_radius + 1.0f;
         instances[*inst_count]._pad = 0.0f;
         (*inst_count)++;
@@ -48,9 +50,11 @@ void ui_panel(InstanceData *instances, int *inst_count, float x, float y, float 
     (*inst_count)++;
 }
 
-void ui_blur_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int has_border, float corner_radius)
+void ui_blur_panel(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity,
+                   int has_border, float corner_radius)
 {
-    if (has_border) {
+    if (has_border)
+    {
         // Draw soft drop shadow behind the panel (extended 12px, offset down 6px)
         float shadow_padding = 12.0f;
         instances[*inst_count].x = x - shadow_padding;
@@ -69,7 +73,7 @@ void ui_blur_panel(InstanceData *instances, int *inst_count, float x, float y, f
         instances[*inst_count].w = w + 2.0f;
         instances[*inst_count].h = h + 2.0f;
         instances[*inst_count].tex_index = TOKEN_BORDER; // White color
-        instances[*inst_count].opacity = 0.5f; // Translucent
+        instances[*inst_count].opacity = 0.5f;           // Translucent
         instances[*inst_count].corner_radius = corner_radius + 1.0f;
         instances[*inst_count]._pad = 0.0f;
         (*inst_count)++;
@@ -87,12 +91,14 @@ void ui_blur_panel(InstanceData *instances, int *inst_count, float x, float y, f
     (*inst_count)++;
 }
 
-int ui_button(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, float mx, float my, float corner_radius)
+int ui_button(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, float mx,
+              float my, float corner_radius)
 {
     int hovered = ui_is_hovered(x, y, w, h, mx, my);
 
     // If hovered, draw sleek glowing accent border
-    if (hovered) {
+    if (hovered)
+    {
         instances[*inst_count].x = x - 1.0f;
         instances[*inst_count].y = y - 1.0f;
         instances[*inst_count].w = w + 2.0f;
@@ -120,16 +126,19 @@ int ui_button(InstanceData *instances, int *inst_count, float x, float y, float 
 
 void ui_button_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
+    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold,
+                        s->theme.text_main);
 }
 
-int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int active, float mx, float my, float corner_radius)
+int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int active,
+             float mx, float my, float corner_radius)
 {
     int hovered = ui_is_hovered(x, y, w, h, mx, my);
     int border_active = active || hovered;
 
     // Draw active or hovered border
-    if (border_active) {
+    if (border_active)
+    {
         instances[*inst_count].x = x - 1.0f;
         instances[*inst_count].y = y - 1.0f;
         instances[*inst_count].w = w + 2.0f;
@@ -157,5 +166,6 @@ int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w
 
 void ui_badge_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold, s->theme.text_main);
+    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_semibold,
+                        s->theme.text_main);
 }

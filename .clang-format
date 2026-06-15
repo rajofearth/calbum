@@ -34,5 +34,6 @@ SpacesInContainerLiterals: true
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 
-Standard: C11
+Standard: Latest
+SortIncludes: false
 ...

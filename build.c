@@ -5,8 +5,9 @@
 // sees the entire application as a single translation unit.
 //
 // Compile:
-//   gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -O2
-//   gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -O0 -g -Wall -Wextra
+//   gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler
+//   -O2 gcc build.c -o calbum.exe -mwindows -lgdi32 -lshell32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs
+//   -ld3dcompiler -O0 -g -Wall -Wextra
 // =========================================================================
 
 // ── 1. System Headers ───────────────────────────────────────────────────
