@@ -817,8 +817,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             was_idle = 1;
         }
     }
-exit_loop:
+	exit_loop:
 
+    // Stop background threads first — they may still be using WIC / D3D resources
+    aw_stop_workers(&g_state);
+    fm_stop_monitor(&g_state);
+
+    // Now safe to tear down subsystems
     r_shutdown(&g_state);
     il_shutdown_wic();
     app_shutdown(&g_state);

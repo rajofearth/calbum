@@ -69,9 +69,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve tag name
+      - name: Resolve version
         id: tag
-        run: echo "name=${{ github.ref_name || inputs.tag_name }}" >> $GITHUB_OUTPUT
+        run: |
+          TAG_NAME="${{ github.ref_name || inputs.tag_name }}"
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="v$(cat VERSION)"
+          fi
+          echo "name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Download x64 build
         uses: actions/download-artifact@v4
@@ -92,11 +98,13 @@ jobs:
           ## calbum ${{ steps.tag.outputs.name }}
 
           ### Downloads
-          - **calbum-x64.exe** — 64-bit Intel/AMD Windows
-          - **calbum-arm64.exe** — 64-bit ARM Windows (Surface Pro X, etc.)
+          | File | Platform |
+          |------|----------|
+          | calbum-x64.exe | 64-bit Intel/AMD Windows |
+          | calbum-arm64.exe | 64-bit ARM Windows |
 
           ### Changelog
-          _(Insert release notes here)_
+          _(This is a draft — replace with the final release notes before publishing)_
           EOF
 
       - name: Publish draft release

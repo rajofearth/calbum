@@ -1,7 +1,13 @@
 CC      ?= gcc
 LDFLAGS = -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
-CFLAGS_RELEASE = -std=c17 -O2 -mwindows -Wall -Wextra
-CFLAGS_DEBUG   = -std=c17 -O0 -mwindows -Wall -Wextra -Wpedantic -g
+
+# Read version from VERSION file
+APP_VERSION := $(shell cat VERSION)
+
+CFLAGS_RELEASE = -std=c17 -O2 -mwindows -Wall -Wextra \
+	-DAPP_VERSION='"$(APP_VERSION)"' -DAPP_VERSION_W='L"$(APP_VERSION)"'
+CFLAGS_DEBUG   = -std=c17 -O0 -mwindows -Wall -Wextra -Wpedantic -g \
+	-DAPP_VERSION='"$(APP_VERSION)"' -DAPP_VERSION_W='L"$(APP_VERSION)"'
 
 BUILD    = build.c
 TARGET   = calbum.exe

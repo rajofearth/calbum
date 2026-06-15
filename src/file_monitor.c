@@ -88,7 +88,8 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
         }
         else
         {
-            Sleep(1000); // directory unavailable; wait before retry
+            // Short sleep on error; stop event is checked at the top of the loop
+            Sleep(100);
         }
     }
     return 0;
@@ -119,21 +120,29 @@ void fm_stop_monitor(AppState *s)
         return;
     s->monitoring_active = 0;
 
+    // Signal stop event first
     if (s->monitor_stop_event)
-    {
         SetEvent(s->monitor_stop_event);
-    }
+
+    // Cancel any pending ReadDirectoryChangesW so the thread can exit promptly
+    if (s->dir_handle)
+        CancelIoEx(s->dir_handle, NULL);
+
+    // Close the directory handle; this also unblocks ReadDirectoryChangesW
     if (s->dir_handle)
     {
         CloseHandle(s->dir_handle);
         s->dir_handle = NULL;
     }
+
+    // Wait for the monitor thread to finish (max 2s, then it will be terminated)
     if (s->monitor_thread)
     {
         WaitForSingleObject(s->monitor_thread, 2000);
         CloseHandle(s->monitor_thread);
         s->monitor_thread = NULL;
     }
+
     if (s->monitor_stop_event)
     {
         CloseHandle(s->monitor_stop_event);
