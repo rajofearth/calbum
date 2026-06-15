@@ -7,8 +7,6 @@
 #include "types.h"
 #include <stdlib.h>
 
-#define WM_CALBUM_FILE_CHANGE (WM_APP + 2)
-
 // Map NT file notify action to our FileChange type enum
 static int map_action(DWORD action)
 {

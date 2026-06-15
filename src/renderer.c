@@ -285,7 +285,8 @@ int r_init(AppState *s)
         // Find best monospace font available
         const wchar_t *mono_font = L"Consolas";
         IDWriteFontCollection *collection = NULL;
-        if (SUCCEEDED(s->dwrite_factory->lpVtbl->GetSystemFontCollection(s->dwrite_factory, &collection, FALSE)) && collection)
+        if (SUCCEEDED(s->dwrite_factory->lpVtbl->GetSystemFontCollection(s->dwrite_factory, &collection, FALSE)) &&
+            collection)
         {
             UINT32 index = 0;
             BOOL exists = FALSE;
@@ -305,13 +306,13 @@ int r_init(AppState *s)
             collection->lpVtbl->Release(collection);
         }
 
-        s->dwrite_factory->lpVtbl->CreateTextFormat(
-            s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 14.0F, L"en-US", &s->dwrite_format_mono);
+        s->dwrite_factory->lpVtbl->CreateTextFormat(s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0F,
+                                                    L"en-US", &s->dwrite_format_mono);
 
-        s->dwrite_factory->lpVtbl->CreateTextFormat(
-            s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.0F, L"en-US", &s->dwrite_format_mono_small);
+        s->dwrite_factory->lpVtbl->CreateTextFormat(s->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 11.0F,
+                                                    L"en-US", &s->dwrite_format_mono_small);
 
         s->dwrite_factory->lpVtbl->CreateTextFormat(
             s->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
@@ -422,23 +423,26 @@ void r_resize(AppState *s)
         }
     }
 
-    D3D11_VIEWPORT vp = {0};
-    vp.Width = (float) s->window_width;
-    vp.Height = (float) s->window_height;
-    vp.MaxDepth = 1.0F;
-    s->d3d_context->lpVtbl->RSSetViewports(s->d3d_context, 1, &vp);
-
-    if (s->constant_buffer)
+    if (s->d3d_context)
     {
-        D3D11_MAPPED_SUBRESOURCE ms;
-        s->d3d_context->lpVtbl->Map(s->d3d_context, (ID3D11Resource *) s->constant_buffer, 0, D3D11_MAP_WRITE_DISCARD,
-                                    0, &ms);
-        float *data = (float *) ms.pData;
-        data[0] = (float) s->window_width;
-        data[1] = (float) s->window_height;
-        data[2] = s->dpi_scale;
-        data[3] = 0.0F;
-        s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource *) s->constant_buffer, 0);
+        D3D11_VIEWPORT vp = {0};
+        vp.Width = (float) s->window_width;
+        vp.Height = (float) s->window_height;
+        vp.MaxDepth = 1.0F;
+        s->d3d_context->lpVtbl->RSSetViewports(s->d3d_context, 1, &vp);
+
+        if (s->constant_buffer)
+        {
+            D3D11_MAPPED_SUBRESOURCE ms;
+            s->d3d_context->lpVtbl->Map(s->d3d_context, (ID3D11Resource *) s->constant_buffer, 0,
+                                        D3D11_MAP_WRITE_DISCARD, 0, &ms);
+            float *data = (float *) ms.pData;
+            data[0] = (float) s->window_width;
+            data[1] = (float) s->window_height;
+            data[2] = s->dpi_scale;
+            data[3] = 0.0F;
+            s->d3d_context->lpVtbl->Unmap(s->d3d_context, (ID3D11Resource *) s->constant_buffer, 0);
+        }
     }
 }
 
@@ -446,7 +450,7 @@ void r_clear(AppState *s, float r, float g, float b)
 {
     if (!s->rtv)
         return;
-    float color[4] = { r, g, b, 1.0F };
+    float color[4] = {r, g, b, 1.0F};
     s->d3d_context->lpVtbl->ClearRenderTargetView(s->d3d_context, s->rtv, color);
 }
 
@@ -600,8 +604,7 @@ void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, fl
 }
 
 void r_draw_text_aligned(AppState *s, const wchar_t *text,
-                         /* x, y, w, h */ float x, float y, float w, float h,
-                         int align_x, int align_y,
+                         /* x, y, w, h */ float x, float y, float w, float h, int align_x, int align_y,
                          struct IDWriteTextFormat *format, float color[4])
 {
     if (!s->d2d_rtv || !s->dwrite_factory || !format)
@@ -910,8 +913,8 @@ float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextF
         return 0.0F;
 
     IDWriteTextLayout *layout = NULL;
-    HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(
-        s->dwrite_factory, text, (UINT32) wcslen(text), format, 9999.0F, 9999.0F, &layout);
+    HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(s->dwrite_factory, text, (UINT32) wcslen(text), format,
+                                                             9999.0F, 9999.0F, &layout);
 
     float width = 0.0F;
     if (SUCCEEDED(hr) && layout)

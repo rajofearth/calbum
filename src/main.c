@@ -58,69 +58,65 @@ static int image_select_offset(AppState *s, int delta)
             }
             return 0;
         }
-        else
-        {
-            // Fallback for tests
-            int new_idx = s->selected_index + delta;
-            if (new_idx >= 0 && new_idx < s->count)
-            {
-                gal_select_full_image(s, new_idx);
-                return 1;
-            }
-            return 0;
-        }
-    }
-    else
-    {
-        int limit = s->grid_items ? s->grid_item_count : s->count;
+
+        // Fallback for tests
         int new_idx = s->selected_index + delta;
-        if (new_idx >= 0 && new_idx < limit)
+        if (new_idx >= 0 && new_idx < s->count)
         {
-            s->selected_index = new_idx;
-            s->needs_redraw = 1;
+            gal_select_full_image(s, new_idx);
             return 1;
         }
         return 0;
     }
+
+    int limit = s->grid_items ? s->grid_item_count : s->count;
+    int new_idx = s->selected_index + delta;
+    if (new_idx >= 0 && new_idx < limit)
+    {
+        s->selected_index = new_idx;
+        s->needs_redraw = 1;
+        return 1;
+    }
+    return 0;
 }
 
 static void theme_init(AppState *s)
 {
     // Deep Charcoal / Obsidian base theme with Amber/Warm Orange accent
-    s->theme.accent[0] = 0.961f; // #f59e0b
-    s->theme.accent[1] = 0.620f;
-    s->theme.accent[2] = 0.043f;
-    s->theme.accent[3] = 1.0f;
+    s->theme.accent[0] = 0.961F; // #f59e0b
+    s->theme.accent[1] = 0.620F;
+    s->theme.accent[2] = 0.043F;
+    s->theme.accent[3] = 1.0F;
 
-    s->theme.bg[0] = 0.039f; // #0a0b0d (Obsidian background)
-    s->theme.bg[1] = 0.043f;
-    s->theme.bg[2] = 0.051f;
-    s->theme.bg[3] = 1.0f;
+    s->theme.bg[0] = 0.039F; // #0a0b0d (Obsidian background)
+    s->theme.bg[1] = 0.043F;
+    s->theme.bg[2] = 0.051F;
+    s->theme.bg[3] = 1.0F;
 
-    s->theme.panel[0] = 0.078f; // #14161b (Dark panel background)
-    s->theme.panel[1] = 0.086f;
-    s->theme.panel[2] = 0.106f;
-    s->theme.panel[3] = 1.0f;
+    s->theme.panel[0] = 0.078F; // #14161b (Dark panel background)
+    s->theme.panel[1] = 0.086F;
+    s->theme.panel[2] = 0.106F;
+    s->theme.panel[3] = 1.0F;
 
-    s->theme.border[0] = 0.133f; // #22252c (Dark border variant)
-    s->theme.border[1] = 0.145f;
-    s->theme.border[2] = 0.173f;
-    s->theme.border[3] = 1.0f;
+    s->theme.border[0] = 0.133F; // #22252c (Dark border variant)
+    s->theme.border[1] = 0.145F;
+    s->theme.border[2] = 0.173F;
+    s->theme.border[3] = 1.0F;
 
-    s->theme.text_main[0] = 0.863f; // #dce0e5
-    s->theme.text_main[1] = 0.878f;
-    s->theme.text_main[2] = 0.898f;
-    s->theme.text_main[3] = 1.0f;
+    s->theme.text_main[0] = 0.863F; // #dce0e5
+    s->theme.text_main[1] = 0.878F;
+    s->theme.text_main[2] = 0.898F;
+    s->theme.text_main[3] = 1.0F;
 
-    s->theme.text_muted[0] = 0.663f; // #a9afbc
-    s->theme.text_muted[1] = 0.686f;
-    s->theme.text_muted[2] = 0.737f;
-    s->theme.text_muted[3] = 1.0f;
+    s->theme.text_muted[0] = 0.663F; // #a9afbc
+    s->theme.text_muted[1] = 0.686F;
+    s->theme.text_muted[2] = 0.737F;
+    s->theme.text_muted[3] = 1.0F;
 
-    s->theme.scrollbar[0] = 0.784f; // #c8ccd44c
-    s->theme.scrollbar[1] = 0.800f;
-    s->theme.scrollbar[2] = 0.831f;
-    s->theme.scrollbar[3] = 0.30f;
+    s->theme.scrollbar[0] = 0.784F; // #c8ccd44c
+    s->theme.scrollbar[1] = 0.800F;
+    s->theme.scrollbar[2] = 0.831F;
+    s->theme.scrollbar[3] = 0.30F;
 
     if (s->d3d_context && s->theme_buffer)
     {
@@ -142,7 +138,7 @@ static void tick_delta_time(AppState *s)
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     int64_t ticks = now.QuadPart - s->last_tick;
-    s->delta_time = (double) ticks / s->perf_counter_freq;
+    s->delta_time = (double) ticks / (double) s->perf_counter_freq;
     s->last_tick = now.QuadPart;
     // Clamp delta to avoid spiral of death on pause/resume
     if (s->delta_time > 0.1)
@@ -156,7 +152,7 @@ static void tick_delta_time(AppState *s)
 static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    LoadResult *result = (LoadResult *) lParam;
+    LoadResult *result = (LoadResult *) (uintptr_t) lParam; // NOLINT
     if (result)
     {
         if (result->succeeded && result->bc1_data)
@@ -177,7 +173,7 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 if (slot != -1)
                 {
                     r_upload_texture(&g_state, slot, result->bc1_data);
-                    e->texture_slot = slot;
+                    e->texture_slot = (int16_t) slot;
                     e->state = IMG_STATE_RESIDENT_GPU;
                 }
             }
@@ -192,7 +188,7 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    FileChange *fc = (FileChange *) lParam;
+    FileChange *fc = (FileChange *) (uintptr_t) lParam; // NOLINT
     if (!fc)
         return;
     AppState *s = &g_state;
@@ -208,7 +204,9 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
         case CHANGE_ADDED:
         {
             // Append and let the next paint lazy-load the thumbnail
-            uint64_t file_size = 0, last_modified = 0, created_time = 0;
+            uint64_t file_size = 0;
+            uint64_t last_modified = 0;
+            uint64_t created_time = 0;
             WIN32_FILE_ATTRIBUTE_DATA wfad;
             if (GetFileAttributesExW(fc->path, GetFileExInfoStandard, &wfad))
             {
@@ -305,9 +303,13 @@ static void on_paint(HWND hwnd)
     if (g_state.window_width > 0 && g_state.window_height > 0)
     {
         if (g_state.view_mode == VIEW_GALLERY)
+        {
             gal_render_gallery(NULL, &g_state);
+        }
         else
+        {
             gal_render_fullimage(NULL, &g_state);
+        }
     }
     EndPaint(hwnd, &ps);
 }
@@ -335,9 +337,6 @@ static void on_keydown(HWND hwnd, int vk)
         switch (vk)
         {
             case VK_ESCAPE:
-                gal_close_full(&g_state);
-                InvalidateRect(hwnd, NULL, TRUE);
-                break;
             case VK_BACK:
                 gal_close_full(&g_state);
                 InvalidateRect(hwnd, NULL, TRUE);
@@ -355,11 +354,11 @@ static void on_keydown(HWND hwnd, int vk)
             case 0xBB: // '+' or '='
             case VK_ADD:
             {
-                g_state.zoom_level *= 1.1f;
-                if (g_state.zoom_level > 8.0f)
-                    g_state.zoom_level = 8.0f;
+                g_state.zoom_level *= 1.1F;
+                if (g_state.zoom_level > 8.0F)
+                    g_state.zoom_level = 8.0F;
                 gal_clamp_zoom_pan(&g_state);
-                g_state.zoom_ui_timer = 2.0f;
+                g_state.zoom_ui_timer = 2.0F;
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
@@ -367,13 +366,15 @@ static void on_keydown(HWND hwnd, int vk)
             case 0xBD: // '-'
             case VK_SUBTRACT:
             {
-                g_state.zoom_level /= 1.1f;
+                g_state.zoom_level /= 1.1F;
                 gal_clamp_zoom_pan(&g_state);
-                g_state.zoom_ui_timer = 2.0f;
+                g_state.zoom_ui_timer = 2.0F;
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
             }
+            default:
+                break;
         }
     }
     else
@@ -397,7 +398,7 @@ static void on_keydown(HWND hwnd, int vk)
                     wcsncpy(g_state.viewing_dir, parent, MAX_PATH_LEN - 1);
                     g_state.viewing_dir[MAX_PATH_LEN - 1] = L'\0';
                     app_populate_grid_items(&g_state);
-                    g_state.scroll_target_y = g_state.scroll_current_y = 0.0f;
+                    g_state.scroll_target_y = g_state.scroll_current_y = 0.0F;
                     g_state.selected_index = 0;
                     gal_update_layout(&g_state);
                     app_update_title(&g_state);
@@ -429,6 +430,8 @@ static void on_keydown(HWND hwnd, int vk)
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
             }
+            default:
+                break;
         }
     }
 }
@@ -441,7 +444,7 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
         {
             InvalidateRect(hwnd, NULL, TRUE);
         }
-        else if (g_state.zoom_level > 1.0f)
+        else if (g_state.zoom_level > 1.0F)
         {
             g_state.is_panning = 1;
             g_state.pan_start_x = (float) x;
@@ -461,7 +464,7 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
 
     // Check scrollbar
     int ms = gal_max_scroll(&g_state);
-    if (ms > 0 && x >= g_state.window_width - 16.0f * g_state.dpi_scale)
+    if (ms > 0 && (float) x >= (float) g_state.window_width - (16.0F * g_state.dpi_scale))
     {
         g_state.is_dragging_scrollbar = 1;
         g_state.drag_start_y = (float) y;
@@ -487,21 +490,21 @@ static void on_mouse_move(HWND hwnd, int x, int y)
         int ms = gal_max_scroll(&g_state);
         if (ms > 0)
         {
-            float track_h = (float) g_state.window_height - 16.0f * g_state.dpi_scale;
+            float track_h = (float) g_state.window_height - (16.0F * g_state.dpi_scale);
             float thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * track_h;
-            if (thumb_h < 24.0f * g_state.dpi_scale)
-                thumb_h = 24.0f * g_state.dpi_scale;
+            if (thumb_h < 24.0F * g_state.dpi_scale)
+                thumb_h = 24.0F * g_state.dpi_scale;
 
             float dy = (float) y - g_state.drag_start_y;
             float scrollable_track = track_h - thumb_h;
 
-            if (scrollable_track > 0.0f)
+            if (scrollable_track > 0.0F)
             {
                 float scroll_delta = dy * (float) ms / scrollable_track;
                 g_state.scroll_current_y = g_state.drag_start_scroll_y + scroll_delta;
 
-                if (g_state.scroll_current_y < 0.0f)
-                    g_state.scroll_current_y = 0.0f;
+                if (g_state.scroll_current_y < 0.0F)
+                    g_state.scroll_current_y = 0.0F;
                 if (g_state.scroll_current_y > (float) ms)
                     g_state.scroll_current_y = (float) ms;
                 g_state.scroll_target_y = g_state.scroll_current_y;
@@ -559,15 +562,16 @@ static void on_mousewheel(HWND hwnd, int delta)
 {
     if (g_state.view_mode == VIEW_GALLERY)
     {
-        gal_scroll(&g_state, (float) (delta / 120 * 60));
+        int snap = delta / 120 * 60;
+        gal_scroll(&g_state, (float) snap);
         InvalidateRect(hwnd, NULL, TRUE);
     }
     else
     {
-        float factor = (delta > 0) ? 1.1f : 0.9f;
+        float factor = (delta > 0) ? 1.1F : 0.9F;
         g_state.zoom_level *= factor;
         gal_clamp_zoom_pan(&g_state);
-        g_state.zoom_ui_timer = 2.0f;
+        g_state.zoom_ui_timer = 2.0F;
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd, NULL, TRUE);
     }
@@ -617,7 +621,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             on_mousewheel(hwnd, GET_WHEEL_DELTA_WPARAM(wParam));
             return 0;
         case WM_DROPFILES:
-            on_drop_files(hwnd, (HDROP) wParam);
+            on_drop_files(hwnd, (HDROP) (uintptr_t) wParam); // NOLINT
             return 0;
         case WM_CALBUM_LOAD_COMPLETE:
             on_thumb_complete(hwnd, wParam, lParam);
@@ -634,10 +638,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
         case WM_DPICHANGED:
         {
-            g_state.dpi_scale = HIWORD(wParam) / 96.0f;
+            g_state.dpi_scale = HIWORD(wParam) / 96.0F;
             gal_update_layout_scales(&g_state);
             gal_update_layout(&g_state);
-            RECT *r = (RECT *) lParam;
+            RECT *r = (RECT *) (uintptr_t) lParam; // NOLINT
             SetWindowPos(hwnd, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             return 0;
@@ -645,7 +649,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
         case WM_GETMINMAXINFO:
         {
-            MINMAXINFO *mmi = (MINMAXINFO *) lParam;
+            MINMAXINFO *mmi = (MINMAXINFO *) (uintptr_t) lParam; // NOLINT
             mmi->ptMinTrackSize.x = MIN_WINDOW_WIDTH;
             mmi->ptMinTrackSize.y = MIN_WINDOW_HEIGHT;
             return 0;
@@ -658,6 +662,9 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
+
+        default:
+            break;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
@@ -665,7 +672,9 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 // ─────────────────────────────────────────────────────────────────────────
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+                   LPSTR lpCmdLine, // NOLINT(readability-non-const-parameter)
+                   int nShowCmd)
 {
     (void) hPrevInstance;
     (void) lpCmdLine;
@@ -704,10 +713,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     DwmExtendFrameIntoClientArea(g_state.hwnd, &margins);
 
     UINT dpi = GetDpiForWindow(g_state.hwnd);
-    g_state.dpi_scale = dpi / 96.0f;
+    g_state.dpi_scale = (float) dpi / 96.0F;
     gal_update_layout_scales(&g_state);
 
-    ShowWindow(g_state.hwnd, nCmdShow);
+    ShowWindow(g_state.hwnd, nShowCmd);
     UpdateWindow(g_state.hwnd);
 
     // Init WIC and D3D11
@@ -770,32 +779,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         gal_tick_smooth_scroll(&g_state);
 
-        if (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0f)
+        if (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0F)
         {
             POINT pt;
             GetCursorPos(&pt);
             ScreenToClient(g_state.hwnd, &pt);
-            float cx = (float) g_state.window_width / 2.0f;
-            float bx = cx - 60.0f * g_state.dpi_scale;
-            float by = 20.0f * g_state.dpi_scale;
-            float bw = 120.0f * g_state.dpi_scale;
-            float bh = 30.0f * g_state.dpi_scale;
-            int hovered = (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh);
+            float cx = (float) g_state.window_width / 2.0F;
+            float bx = cx - (60.0F * g_state.dpi_scale);
+            float by = 20.0F * g_state.dpi_scale;
+            float bw = 120.0F * g_state.dpi_scale;
+            float bh = 30.0F * g_state.dpi_scale;
+            int hovered =
+                ((float) pt.x >= bx && (float) pt.x <= bx + bw && (float) pt.y >= by && (float) pt.y <= by + bh);
             if (hovered)
             {
-                g_state.zoom_ui_timer = 2.0f;
+                g_state.zoom_ui_timer = 2.0F;
             }
             else
             {
                 g_state.zoom_ui_timer -= (float) g_state.delta_time;
-                if (g_state.zoom_ui_timer < 0.0f)
-                    g_state.zoom_ui_timer = 0.0f;
+                if (g_state.zoom_ui_timer < 0.0F)
+                    g_state.zoom_ui_timer = 0.0F;
             }
             g_state.needs_redraw = 1;
         }
 
         if (g_state.needs_redraw || (g_state.view_mode == VIEW_FULLIMAGE && g_state.full_load_timer > 0.0) ||
-            (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0f))
+            (g_state.view_mode == VIEW_FULLIMAGE && g_state.zoom_ui_timer > 0.0F))
         {
             InvalidateRect(g_state.hwnd, NULL, TRUE);
             UpdateWindow(g_state.hwnd); // Synchronous paint ensures drawing matches physics

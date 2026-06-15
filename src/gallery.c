@@ -48,7 +48,7 @@ int gal_handle_ui_click(AppState *s, int x, int y)
     float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
     int btn_w = (int) (90 * dpi);
     int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) ((float)s->window_width - (float)btn_w - (20.0F * dpi));
+    int btn_x = (int) ((float) s->window_width - (float) btn_w - (20.0F * dpi));
     int btn_y = (int) (10 * dpi);
 
     if (s->sort_menu_open)
@@ -167,9 +167,9 @@ void gal_render_gallery(HDC hdc, AppState *s)
         int row = i / lay.cols;
         int col = i % lay.cols;
         float x = (float) (lay.left_margin + (col * lay.pad));
-        float y = s->layout.topbar_height + s->layout.panel_padding + (float)(row * lay.pad) - (float)lay.scroll_int;
+        float y = s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay.pad) - (float) lay.scroll_int;
 
-        if (y + thumb_size < 0 || y > (float)s->window_height)
+        if (y + thumb_size < 0 || y > (float) s->window_height)
             continue;
 
         int hovered = ui_is_hovered(x, y, thumb_size, thumb_size, (float) pt.x, (float) pt.y);
@@ -179,17 +179,23 @@ void gal_render_gallery(HDC hdc, AppState *s)
 
         // Subtle border behind the card (drawn first so image/panel covers the center)
         float border_opacity;
-        if (s->selected_index == i) {
+        if (s->selected_index == i)
+        {
             border_opacity = 0.0F;
-        } else {
+        }
+        else
+        {
             border_opacity = hovered ? 0.8F : 0.3F;
         }
 
         if (type == ITEM_FOLDER)
         {
-            if (s->selected_index == i) {
+            if (s->selected_index == i)
+            {
                 border_opacity = 0.0F;
-            } else {
+            }
+            else
+            {
                 border_opacity = hovered ? 0.8F : 0.4F;
             }
 
@@ -361,8 +367,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
     // Sort Button & Dropdown Layout (compact position vertically centered in topbar)
     int btn_w = (int) (90 * s->dpi_scale);
     int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) ((float)s->window_width - (float)btn_w - (16.0F * s->dpi_scale));
-    int btn_y = (int) ((s->layout.topbar_height - (float)btn_h) / 2.0F);
+    int btn_x = (int) ((float) s->window_width - (float) btn_w - (16.0F * s->dpi_scale));
+    int btn_y = (int) ((s->layout.topbar_height - (float) btn_h) / 2.0F);
 
     ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0F, (float) pt.x,
               (float) pt.y, 4.0F * s->dpi_scale);
@@ -395,9 +401,10 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 int row = i / lay.cols;
                 int col = i % lay.cols;
                 float x = (float) (lay.left_margin + (col * lay.pad));
-                float y = s->layout.topbar_height + s->layout.panel_padding + (float)(row * lay.pad) - (float)lay.scroll_int;
+                float y = s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay.pad) -
+                          (float) lay.scroll_int;
 
-                if (y + thumb_size < 0 || y > (float)s->window_height)
+                if (y + thumb_size < 0 || y > (float) s->window_height)
                     continue;
 
                 int show_counts = (_wcsicmp(s->grid_items[i].folder_name, L"..") != 0 &&
@@ -422,8 +429,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
                     float count_w = thumb_size - (32.0F * s->dpi_scale);
                     float count_h = 14.0F * s->dpi_scale;
 
-                    r_draw_text_aligned(s, count_buf, count_x, count_y, count_w, count_h, ALIGN_X_LEFT,
-                                        ALIGN_Y_BOTTOM, s->dwrite_format_mono_small, s->theme.text_muted);
+                    r_draw_text_aligned(s, count_buf, count_x, count_y, count_w, count_h, ALIGN_X_LEFT, ALIGN_Y_BOTTOM,
+                                        s->dwrite_format_mono_small, s->theme.text_muted);
                 }
 
                 // 3. Draw folder name (in the middle, left-aligned)
@@ -537,15 +544,15 @@ void gal_render_gallery(HDC hdc, AppState *s)
     }
 
     // Draw parent path segment in muted color using system small font
-    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0F, text_h,
-                        ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_muted);
+    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0F, text_h, ALIGN_X_LEFT, ALIGN_Y_CENTER,
+                        s->dwrite_format_small, s->theme.text_muted);
 
     // Draw active folder name in main color
     float child_max_w = (float) btn_x - text_x - cached_parent_w - 10.0F;
     if (child_max_w > 10.0F)
     {
-        r_draw_text_aligned(s, child_dir, text_x + cached_parent_w, text_y, child_max_w, text_h,
-                            ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_main);
+        r_draw_text_aligned(s, child_dir, text_x + cached_parent_w, text_y, child_max_w, text_h, ALIGN_X_LEFT,
+                            ALIGN_Y_CENTER, s->dwrite_format_small, s->theme.text_main);
     }
 
     ui_button_text(s, L"Sort \x25BC", (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h);
@@ -565,8 +572,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
         float option_h = 30.0F * s->dpi_scale;
         for (int i = 0; i < 5; i++)
         {
-            r_draw_text_ext(s, opts[i], (float)menu_x + (12.0F * s->dpi_scale),
-                            (float)menu_y + (5.0F * s->dpi_scale) + ((float)i * option_h), (float) menu_w, option_h,
+            r_draw_text_ext(s, opts[i], (float) menu_x + (12.0F * s->dpi_scale),
+                            (float) menu_y + (5.0F * s->dpi_scale) + ((float) i * option_h), (float) menu_w, option_h,
                             s->dwrite_format_regular, s->theme.text_main);
         }
     }

@@ -7,6 +7,10 @@
 // #included directly into build.c in dependency order, so visibility is
 // controlled by inclusion order, not by header files.
 // =========================================================================
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+
 #include <windows.h>
 
 // Ensure 'interface' is defined for COM headers (required by some language servers)
@@ -18,11 +22,16 @@
 #include <d3d11.h>
 #include <wincodec.h>
 #include <stdint.h>
+#include <wchar.h>
 
 // -------------------------------------------------------------------------
 // Constants
 // -------------------------------------------------------------------------
 #define MAX_PATH_LEN 1024
+
+// Custom window messages for inter-thread communication
+#define WM_CALBUM_LOAD_COMPLETE (WM_APP + 1)
+#define WM_CALBUM_FILE_CHANGE (WM_APP + 2)
 #define THUMB_SIZE 160
 #define THUMB_PADDING 8
 #define GALLERY_PADDING 16
@@ -571,7 +580,7 @@ void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, flo
                          struct IDWriteTextFormat *format, float color[4]);
 float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format);
 void r_draw_text_ext(AppState *s, const wchar_t *text, float x, float y, float w, float h,
-                         struct IDWriteTextFormat *format, float color[4]);
+                     struct IDWriteTextFormat *format, float color[4]);
 int r_load_full_image(AppState *s, const wchar_t *path);
 void r_free_full_image(AppState *s);
 FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path);

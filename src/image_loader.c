@@ -14,7 +14,7 @@ int il_init_wic(void)
                                   (void **) &g_wic_factory);
     if (SUCCEEDED(hr))
     {
-        g_decode_buffer = malloc(16 * 1024 * 1024);
+        g_decode_buffer = malloc((size_t) 16 * 1024 * 1024);
     }
     return SUCCEEDED(hr) ? 1 : 0;
 }
@@ -52,14 +52,20 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
     if (FAILED(hr))
         return NULL;
 
-    UINT w = 0, h = 0;
+    UINT w = 0;
+    UINT h = 0;
     frame->lpVtbl->GetSize(frame, &w, &h);
 
-    UINT tw = thumb_size, th = thumb_size;
+    UINT tw = thumb_size;
+    UINT th = thumb_size;
     if (w > h)
+    {
         th = (h * thumb_size) / w;
+    }
     else
+    {
         tw = (w * thumb_size) / h;
+    }
     if (tw == 0)
         tw = 1;
     if (th == 0)
@@ -85,7 +91,7 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
     if (SUCCEEDED(hr))
     {
         hr = converter->lpVtbl->Initialize(converter, (IWICBitmapSource *) scaler, &GUID_WICPixelFormat32bppRGBA,
-                                           WICBitmapDitherTypeNone, NULL, 0.f, WICBitmapPaletteTypeCustom);
+                                           WICBitmapDitherTypeNone, NULL, 0.F, WICBitmapPaletteTypeCustom);
         if (FAILED(hr))
         {
             converter->lpVtbl->Release(converter);
@@ -105,7 +111,7 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
         UINT dy = (thumb_size - th) / 2;
         WICRect rect = {0, 0, (INT) tw, (INT) th};
 
-        unsigned char *tight = (unsigned char *) malloc(tw * 4 * th);
+        unsigned char *tight = (unsigned char *) malloc((size_t) tw * 4 * th);
         if (tight)
         {
             hr = converter->lpVtbl->CopyPixels(converter, &rect, tw * 4, tw * 4 * th, tight);
@@ -113,7 +119,8 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
             {
                 for (UINT y = 0; y < th; y++)
                 {
-                    memcpy(rgba + (dy + y) * stride + dx * 4, tight + y * tw * 4, tw * 4);
+                    memcpy(rgba + ((size_t) (dy + y) * stride) + (size_t) (dx * 4), tight + ((size_t) y * tw * 4),
+                           (size_t) tw * 4);
                 }
             }
             free(tight);
@@ -145,9 +152,9 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
                 {
                     for (int x = 0; x < 4; x++)
                     {
-                        int sx = bx * 4 + x;
-                        int sy = by * 4 + y;
-                        memcpy(&block[(y * 4 + x) * 4], &rgba[sy * stride + sx * 4], 4);
+                        int sx = (bx * 4) + x;
+                        int sy = (by * 4) + y;
+                        memcpy(&block[(size_t) (((y * 4) + x) * 4)], &rgba[(size_t) ((sy * stride) + (sx * 4))], 4);
                     }
                 }
                 stb_compress_dxt_block(dst, block, 0, 0);
@@ -185,7 +192,8 @@ int il_get_image_dimensions(const wchar_t *path, int *out_w, int *out_h)
     if (FAILED(hr))
         return 0;
 
-    UINT w = 0, h = 0;
+    UINT w = 0;
+    UINT h = 0;
     frame->lpVtbl->GetSize(frame, &w, &h);
     frame->lpVtbl->Release(frame);
 
@@ -211,11 +219,13 @@ void *il_load_full_image(const wchar_t *path, int *out_w, int *out_h)
     if (FAILED(hr))
         return NULL;
 
-    UINT w = 0, h = 0;
+    UINT w = 0;
+    UINT h = 0;
     frame->lpVtbl->GetSize(frame, &w, &h);
 
     // Limit maximum dimension to 2048px for smooth Direct3D uploading and low memory footprint
-    UINT tw = w, th = h;
+    UINT tw = w;
+    UINT th = h;
     UINT max_dim = 2048;
     if (w > max_dim || h > max_dim)
     {
@@ -257,7 +267,7 @@ void *il_load_full_image(const wchar_t *path, int *out_w, int *out_h)
     if (SUCCEEDED(hr))
     {
         hr = converter->lpVtbl->Initialize(converter, source, &GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
-                                           NULL, 0.f, WICBitmapPaletteTypeCustom);
+                                           NULL, 0.F, WICBitmapPaletteTypeCustom);
     }
 
     if (scaler)

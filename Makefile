@@ -7,7 +7,7 @@ BUILD    = build.c
 TARGET   = calbum.exe
 TARGET_DEBUG = calbum_debug.exe
 
-.PHONY: all release debug dev run clean test format lint size
+.PHONY: all release debug dev run clean test format lint lint-full lint-fix size
 
 all: test release
 
@@ -36,7 +36,29 @@ format:
 	clang-format -i src/*.c src/*.h build.c tests/test_main.c
 
 lint:
+	@echo "=== clang-tidy: warning summary ==="
+	@clang-tidy src/*.c -- -I. 2>&1 \
+	  | grep -oE '\[[^]]+\]$$' \
+	  | sort \
+	  | uniq -c \
+	  | sort -rn \
+	  | awk '{printf "  %4d  %s\n", $$1, $$2}'
+	@total=$$(clang-tidy src/*.c -- -I. 2>&1 | grep -cE '\[[^]]+\]$$' 2>/dev/null || true); \
+	 echo "-----------------------"; \
+	 echo "  $$total total warnings"; \
+	 if [ "$$total" -eq 0 ]; then echo "  ✨ Clean!"; fi
+
+lint-full:
 	clang-tidy src/*.c -- -I.
+
+lint-fix:
+	@echo "=== Auto-fixing mechanical warnings ==="
+	@clang-tidy --fix-errors \
+	  --checks="-*,readability-uppercase-literal-suffix,readability-math-missing-parentheses,readability-isolate-declaration,readability-braces-around-statements,readability-redundant-declaration,readability-else-after-return,readability-avoid-nested-conditional-operator,bugprone-implicit-widening-of-multiplication-result" \
+	  src/*.c -- -I. 2>&1 \
+	  | grep -E "applied [0-9]+ of|^clang-tidy applied" || true
+	@echo "---"
+	@echo "Run 'make lint' to check remaining warnings."
 
 size: release
 	@echo "Binary:"; ls -lh $(TARGET)

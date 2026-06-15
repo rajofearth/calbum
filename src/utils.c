@@ -28,7 +28,8 @@ void format_filetime(uint64_t filetime, wchar_t *buf, int len)
     ft.dwHighDateTime = (DWORD) (filetime >> 32);
     ft.dwLowDateTime = (DWORD) (filetime & 0xFFFFFFFF);
 
-    SYSTEMTIME stUTC, stLocal;
+    SYSTEMTIME stUTC;
+    SYSTEMTIME stLocal;
     if (FileTimeToSystemTime(&ft, &stUTC))
     {
         if (SystemTimeToTzSpecificLocalTime(NULL, &stUTC, &stLocal))

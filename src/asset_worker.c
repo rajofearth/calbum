@@ -5,8 +5,6 @@
 #include <shlobj.h>
 #include <stdio.h>
 
-#define WM_CALBUM_LOAD_COMPLETE (WM_APP + 1)
-
 static wchar_t g_cache_dir[MAX_PATH_LEN];
 
 static uint64_t hash_path(const wchar_t *path)
@@ -71,7 +69,7 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
                                        FILE_ATTRIBUTE_NORMAL, NULL);
             if (hFile != INVALID_HANDLE_VALUE)
             {
-                bc1_size = GetFileSize(hFile, NULL);
+                bc1_size = (int) GetFileSize(hFile, NULL);
                 if (bc1_size > 0)
                 {
                     bc1 = malloc(bc1_size);

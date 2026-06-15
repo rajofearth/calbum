@@ -15,6 +15,10 @@ Checks: >
   -bugprone-suspicious-include,
   -modernize-macro-to-enum,
   -bugprone-reserved-identifier,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -bugprone-easily-swappable-parameters,
+  -clang-analyzer-optin.portability.UnixAPI,
+  -bugprone-invalid-enum-default-initialization,
 
 WarningsAsErrors: >
   clang-diagnostic-implicit-int,

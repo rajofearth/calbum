@@ -13,8 +13,10 @@ int fs_has_image_extension(const wchar_t *name)
     if (!dot)
         return 0;
     for (size_t i = 0; i < sizeof(exts) / sizeof(exts[0]); i++)
+    {
         if (_wcsicmp(dot, exts[i]) == 0)
             return 1;
+    }
     return 0;
 }
 
