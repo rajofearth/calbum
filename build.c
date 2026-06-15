@@ -11,6 +11,10 @@
 // =========================================================================
 
 // ── 1. System Headers ───────────────────────────────────────────────────
+// Target Windows 10+ so that APIs like GetDpiForWindow are declared.
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
 #include <windows.h>
 #include <initguid.h>
 #include <knownfolders.h>

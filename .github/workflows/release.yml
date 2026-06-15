@@ -22,32 +22,30 @@ jobs:
         include:
           - arch: x64
             triple: x86_64-w64-mingw32
-            mingw_archive: x86_64-15.2.0-release-posix-seh-ucrt-rt_v13-rev0.7z
             out_name: calbum-x64.exe
           - arch: arm64
             triple: aarch64-w64-mingw32
-            mingw_archive: aarch64-15.2.0-release-posix-seh-ucrt-rt_v13-rev0.7z
             out_name: calbum-arm64.exe
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MinGW (${{ matrix.arch }})
+      - name: Install MinGW (llvm-mingw)
         shell: pwsh
         run: |
-          $url = "https://github.com/niXman/mingw-builds-binaries/releases/download/15.2.0-rt_v13-rev0/${{ matrix.mingw_archive }}"
-          $archive = Join-Path $env:RUNNER_TEMP "${{ matrix.mingw_archive }}"
-          Write-Host "Downloading MinGW ${{ matrix.arch }} ..."
+          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/20260602/llvm-mingw-20260602-ucrt-x86_64.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "llvm-mingw.zip"
+          Write-Host "Downloading llvm-mingw ..."
           Invoke-WebRequest -Uri $url -OutFile $archive
-          $extractDir = Join-Path $env:RUNNER_TEMP "mingw-${{ matrix.arch }}"
-          New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-          7z x $archive -o"$extractDir" -y | Out-Null
-          $binDir = Join-Path $extractDir "mingw64" "bin"
+          $extractDir = Join-Path $env:RUNNER_TEMP "llvm-mingw"
+          Write-Host "Extracting ..."
+          Expand-Archive -Path $archive -DestinationPath $extractDir -Force
+          $binDir = Join-Path $extractDir "llvm-mingw-20260602-ucrt-x86_64" "bin"
+          Write-Host "Adding $binDir to PATH"
           echo "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build release (${{ matrix.arch }})
         env:
-          # Use tag name from tag push, or fall back to manual dispatch input
           TAG: ${{ github.ref_name || inputs.tag_name }}
         run: >
           ${{ matrix.triple }}-gcc build.c -o ${{ matrix.out_name }}
