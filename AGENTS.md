@@ -11,8 +11,12 @@ Direct3D 11 / Direct2D.  The cache directory is `%LOCALAPPDATA%\calbum\Cache`.
 - Override for CI builds: `-DAPP_VERSION='"1.0.0"' -DAPP_VERSION_W='L"1.0.0"'`
 - Bump the version in `types.h` before tagging a release
 
-## Commit Conventions
+## Commit & Quality Guidelines
 
+### Commit Conventions
 - Imperative mood, 50-char subject, 72-char wrap body
 - Explain the *why* not just the *what*
 - Reference modules by prefix (e.g., "renderer", "asset_worker", "release workflow")
+
+### Quality Checklist
+- Run format and lint checks after each change or before the final commit to enforce the code quality standards defined in the project's README.
