@@ -557,23 +557,28 @@ typedef struct AppState
 void format_size(uint64_t bytes, wchar_t *buf, int len);
 void format_filetime(uint64_t filetime, wchar_t *buf, int len);
 
+// logger.c
+void log_error(const wchar_t *fmt, ...);
+
 // layout.c
-void gal_calc_layout(const AppState *s, GridLayout *out);
-int gal_max_scroll(const AppState *s);
+void gal_calc_layout(const DataState *data, const ViewState *view, const UIState *ui, int window_width,
+                     int window_height, GridLayout *out);
+int gal_max_scroll(const DataState *data, const ViewState *view, const UIState *ui, int window_width,
+                   int window_height);
 
 // app.c
 void app_init(AppState *s);
-void app_shutdown(AppState *s);
-void app_load_folder(AppState *s, const wchar_t *path);
-void app_update_title(AppState *s);
+void app_shutdown(AppState *s, GpuState *r, TextState *txt);
+void app_load_folder(AppState *s, GpuState *r, TextState *txt, const wchar_t *path);
+void app_update_title(const wchar_t *viewing_dir, HWND hwnd);
 void app_get_pictures_folder(wchar_t *buf, int len);
 void app_get_parent_dir(const wchar_t *path, wchar_t *out, int max_len);
-ImageEntry *app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size,
+ImageEntry *app_append_image_entry(DataState *data, const wchar_t *path, const wchar_t *filename, uint64_t file_size,
                                    uint64_t last_modified, uint64_t created_time);
-void app_populate_grid_items(AppState *s);
+void app_populate_grid_items(DataState *data);
 
 // file_scanner.c
-int fs_scan_directory(const wchar_t *path, AppState *s);
+int fs_scan_directory(const wchar_t *path, DataState *data);
 int fs_has_image_extension(const wchar_t *name);
 DWORD WINAPI fs_scan_thread(LPVOID param);
 
@@ -587,34 +592,40 @@ void *il_load_full_image(const wchar_t *path, int *out_w, int *out_h);
 
 // file_monitor.c
 int fm_start_monitor(AppState *s, const wchar_t *directory);
-void fm_stop_monitor(AppState *s);
+void fm_stop_monitor(WorkerState *worker);
 
 // asset_worker.c
-int aw_start_workers(AppState *s);
-void aw_stop_workers(AppState *s);
-int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND hwnd);
-int aw_request_full_image(AppState *s, const wchar_t *path, HWND hwnd);
+int aw_start_workers(WorkerState *worker);
+void aw_stop_workers(WorkerState *worker);
+int aw_request_thumbnail(WorkerState *worker, const wchar_t *path, int thumb_size, HWND hwnd);
+int aw_request_full_image(WorkerState *worker, const wchar_t *path, HWND hwnd);
 DWORD WINAPI aw_worker_thread(LPVOID param);
 
 // gallery.c
-void gal_render_gallery(HDC hdc, AppState *s);
-void gal_render_fullimage(HDC hdc, AppState *s);
-void gal_clamp_zoom_pan(AppState *s);
-int gal_hit_test(const AppState *s, int x, int y, int *out_index);
-int gal_handle_ui_click(AppState *s, int x, int y);
-int gal_handle_fullimage_click(AppState *s, int x, int y);
-void gal_apply_sort(AppState *s);
-void gal_scroll(AppState *s, float delta);
-void gal_update_layout(AppState *s);
-void gal_update_layout_scales(AppState *s);
-void gal_open_full(AppState *s, int index);
-void gal_close_full(AppState *s);
-void gal_select_full_image(AppState *s, int index);
-void gal_tick_smooth_scroll(AppState *s);
-void fiv_strip_bounds(AppState *s, int active_strip_idx, int total_images, int *out_start, int *out_end,
-                      int *out_num_thumbs);
-int fiv_is_in_strip(AppState *s, const wchar_t *path);
-void gal_activate_item(AppState *s, int idx);
+void gal_render_gallery(HDC hdc, GpuState *r, TextState *txt, DataState *data, ViewState *view, UIState *ui,
+                        WorkerState *worker, int window_width, int window_height, HWND hwnd);
+void gal_render_fullimage(HDC hdc, GpuState *r, TextState *txt, DataState *data, ViewState *view, UIState *ui,
+                          WorkerState *worker, int window_width, int window_height, HWND hwnd);
+void gal_clamp_zoom_pan(ViewState *view, int window_width, int window_height, float dpi_scale, float topbar_height);
+int gal_hit_test(const DataState *data, const ViewState *view, const UIState *ui, int window_width, int window_height,
+                 int x, int y, int *out_index);
+int gal_handle_ui_click(DataState *data, ViewState *view, UIState *ui, int x, int y, int window_width,
+                        int *needs_redraw);
+int gal_handle_fullimage_click(DataState *data, ViewState *view, UIState *ui, GpuState *r, WorkerState *worker, int x,
+                               int y, int window_width, int window_height, int *needs_redraw, HWND hwnd);
+void gal_apply_sort(DataState *data, ViewState *view);
+void gal_scroll(ViewState *view, float delta, int *needs_redraw);
+void gal_update_layout(ViewState *view, int window_height);
+void gal_update_layout_scales(UIState *ui);
+void gal_open_full(ViewState *view, int index);
+void gal_close_full(ViewState *view, GpuState *r, int *needs_redraw);
+void gal_select_full_image(DataState *data, ViewState *view, GpuState *r, WorkerState *worker, int index, HWND hwnd);
+void gal_tick_smooth_scroll(ViewState *view, int window_height, double delta_time, int *needs_redraw);
+void fiv_strip_bounds(const UIState *ui, int window_width, int active_strip_idx, int total_images, int *out_start,
+                      int *out_end, int *out_num_thumbs);
+int fiv_is_in_strip(const DataState *data, const ViewState *view, int grid_item_count, const wchar_t *path);
+void gal_activate_item(DataState *data, ViewState *view, UIState *ui, GpuState *r, WorkerState *worker, int idx,
+                       HWND hwnd);
 
 // renderer.c
 typedef struct
@@ -629,25 +640,25 @@ typedef struct
     float _pad;
 } InstanceData;
 
-int r_init(AppState *s);
-void r_shutdown(AppState *s);
-void r_resize(AppState *s);
-void r_clear(AppState *s, float r, float g, float b);
-void r_clear_theme(AppState *s);
-void r_present(AppState *s);
-int r_alloc_texture_slot(AppState *s, int image_index);
-void r_upload_texture(AppState *s, int slot, void *bc1_data);
-void r_evict_texture(AppState *s, int slot);
-void r_draw_instances(AppState *s, void *instances, int count);
-void r_copy_backbuffer_for_blur(AppState *s);
-void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, float h);
-void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, float w, float h, int align_x, int align_y,
-                         struct IDWriteTextFormat *format, float color[4]);
-float r_measure_text_width(AppState *s, const wchar_t *text, struct IDWriteTextFormat *format);
-void r_draw_text_ext(AppState *s, const wchar_t *text, float x, float y, float w, float h,
-                     struct IDWriteTextFormat *format, float color[4]);
-int r_load_full_image(AppState *s, const wchar_t *path);
-void r_free_full_image(AppState *s);
-FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path);
-void r_free_full_image_slot(AppState *s, int i);
-int r_alloc_full_image_slot(AppState *s);
+int r_init(GpuState *r, TextState *txt, HWND hwnd);
+void r_shutdown(GpuState *r, TextState *txt);
+void r_resize(GpuState *r, TextState *txt, int width, int height, float dpi_scale);
+void r_clear(GpuState *r_, float r, float g, float b);
+void r_clear_theme(GpuState *r, const float bg[4]);
+void r_present(GpuState *r);
+int r_alloc_texture_slot(GpuState *r, DataState *data, int image_index);
+void r_upload_texture(GpuState *r, int slot, void *bc1_data);
+void r_evict_texture(GpuState *r, DataState *data, int slot);
+void r_draw_instances(GpuState *r, void *instances, int count);
+void r_copy_backbuffer_for_blur(GpuState *r);
+void r_draw_text(TextState *txt, GpuState *r, const wchar_t *text, float x, float y, float w, float h);
+void r_draw_text_aligned(TextState *txt, GpuState *r, const wchar_t *text, float x, float y, float w, float h,
+                         int align_x, int align_y, struct IDWriteTextFormat *format, const float color[4]);
+float r_measure_text_width(TextState *txt, const wchar_t *text, struct IDWriteTextFormat *format);
+void r_draw_text_ext(TextState *txt, GpuState *r, const wchar_t *text, float x, float y, float w, float h,
+                     struct IDWriteTextFormat *format, const float color[4]);
+int r_load_full_image(GpuState *r, const wchar_t *path);
+void r_free_full_image(GpuState *r);
+FullImageSlot *r_get_full_image_slot(GpuState *r, const wchar_t *path);
+void r_free_full_image_slot(GpuState *r, int i);
+int r_alloc_full_image_slot(GpuState *r, DataState *data, ViewState *view, int grid_item_count);

@@ -20,6 +20,7 @@
 
 // ── Library modules ─────────────────────────────────────────────────────
 #include "lib/core/utils.c"
+#include "lib/core/logger.c"
 #include "lib/gpu/device.c"
 #include "lib/gpu/shader.c"
 #include "lib/gpu/texture.c"
@@ -85,7 +86,7 @@ static void test_layout_narrow(void)
     s.data.grid_item_count = 10;
     s.ui.dpi_scale = 1.0F;
     GridLayout lay;
-    gal_calc_layout(&s, &lay);
+    gal_calc_layout(&s.data, &s.view, &s.ui, s.window_width, s.window_height, &lay);
     CHECK(lay.cols == 1, "expected 1 column for 200px");
     PASS();
 }
@@ -101,7 +102,7 @@ static void test_layout_1200(void)
     s.ui.layout.grid_gap = 8.0F;
     s.ui.layout.panel_padding = 16.0F;
     GridLayout lay;
-    gal_calc_layout(&s, &lay);
+    gal_calc_layout(&s.data, &s.view, &s.ui, s.window_width, s.window_height, &lay);
     CHECK(lay.cols >= 7, "expected >=7 cols");
     PASS();
 }
@@ -115,7 +116,7 @@ static void test_layout_1920(void)
     s.data.grid_item_count = 100;
     s.ui.dpi_scale = 1.0F;
     GridLayout lay;
-    gal_calc_layout(&s, &lay);
+    gal_calc_layout(&s.data, &s.view, &s.ui, s.window_width, s.window_height, &lay);
     CHECK(lay.cols >= 11, "expected >=11 cols at 1920px");
     PASS();
 }
@@ -129,7 +130,7 @@ static void test_layout_zero_width(void)
     s.data.grid_item_count = 10;
     s.ui.dpi_scale = 1.0F;
     GridLayout lay;
-    gal_calc_layout(&s, &lay);
+    gal_calc_layout(&s.data, &s.view, &s.ui, s.window_width, s.window_height, &lay);
     CHECK(lay.cols >= 1, "cols should be at least 1");
     PASS();
 }
@@ -141,7 +142,8 @@ static void test_hit_empty(void)
     s.view.view_mode = VIEW_GALLERY;
     s.data.grid_item_count = 0;
     int idx;
-    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit on empty");
+    CHECK(gal_hit_test(&s.data, &s.view, &s.ui, s.window_width, s.window_height, 100, 100, &idx) == 0,
+          "no hit on empty");
     PASS();
 }
 
@@ -152,7 +154,8 @@ static void test_hit_wrong_view(void)
     s.view.view_mode = VIEW_FULLIMAGE;
     s.data.grid_item_count = 10;
     int idx;
-    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit in fullimage");
+    CHECK(gal_hit_test(&s.data, &s.view, &s.ui, s.window_width, s.window_height, 100, 100, &idx) == 0,
+          "no hit in fullimage");
     PASS();
 }
 
@@ -171,7 +174,7 @@ static void test_hit_first(void)
     s.view.scroll_current_y = 0.0F;
     int idx;
     // Grid first cell: left_margin=16, top=64, cell w=160
-    int got = gal_hit_test(&s, 90, 140, &idx);
+    int got = gal_hit_test(&s.data, &s.view, &s.ui, s.window_width, s.window_height, 90, 140, &idx);
     CHECK(got && idx == 0, "expected hit on index 0");
     PASS();
 }
@@ -191,7 +194,7 @@ static void test_hit_second(void)
     s.view.scroll_current_y = 0.0F;
     int idx;
     // Grid second cell: col=1, left_margin + 1*168 = 184, top=64
-    int got = gal_hit_test(&s, 250, 140, &idx);
+    int got = gal_hit_test(&s.data, &s.view, &s.ui, s.window_width, s.window_height, 250, 140, &idx);
     CHECK(got && idx == 1, "expected hit on index 1");
     PASS();
 }
@@ -210,7 +213,7 @@ static void test_hit_outside(void)
     s.ui.layout.topbar_height = 48.0F;
     s.view.scroll_current_y = 0.0F;
     int idx;
-    CHECK(gal_hit_test(&s, 0, 0, &idx) == 0, "no hit at (0,0)");
+    CHECK(gal_hit_test(&s.data, &s.view, &s.ui, s.window_width, s.window_height, 0, 0, &idx) == 0, "no hit at (0,0)");
     PASS();
 }
 
@@ -261,7 +264,7 @@ static void test_max_scroll_clamped(void)
     s.ui.layout.grid_gap = 8.0F;
     s.ui.layout.panel_padding = 16.0F;
     s.ui.layout.topbar_height = 48.0F;
-    int ms = gal_max_scroll(&s);
+    int ms = gal_max_scroll(&s.data, &s.view, &s.ui, s.window_width, s.window_height);
     CHECK(ms >= 0, "max scroll non-negative");
     PASS();
 }
@@ -278,7 +281,7 @@ static void test_zoom_pan_clamp(void)
     s.view.zoom_level = 1.0F;
     s.view.zoom_pan_x = 200.0F;
     s.view.zoom_pan_y = 200.0F;
-    gal_clamp_zoom_pan(&s);
+    gal_clamp_zoom_pan(&s.view, s.window_width, s.window_height, s.ui.dpi_scale, s.ui.layout.topbar_height);
     CHECK(s.view.zoom_pan_x == 0.0F, "pan x reset to 0");
     CHECK(s.view.zoom_pan_y == 0.0F, "pan y reset to 0");
     CHECK(s.view.zoom_level == 1.0F, "zoom level kept at 1");
@@ -347,7 +350,9 @@ static void test_fullimage_back(void)
     s.window_width = 1200;
     s.window_height = 800;
     s.ui.dpi_scale = 1.0F;
-    int r = gal_handle_fullimage_click(&s, 50, 35);
+    int needs_redraw_fb = 0;
+    int r = gal_handle_fullimage_click(&s.data, &s.view, &s.ui, &s.gpu, &s.worker, 50, 35, s.window_width,
+                                       s.window_height, &needs_redraw_fb, s.hwnd);
     CHECK(r == 1, "click on back region returns 1");
     PASS();
 }
@@ -360,7 +365,9 @@ static void test_fullimage_info_toggle(void)
     s.window_width = 1200;
     s.window_height = 800;
     s.ui.dpi_scale = 1.0F;
-    int r = gal_handle_fullimage_click(&s, 1120, 35);
+    int needs_redraw_it = 0;
+    int r = gal_handle_fullimage_click(&s.data, &s.view, &s.ui, &s.gpu, &s.worker, 1120, 35, s.window_width,
+                                       s.window_height, &needs_redraw_it, s.hwnd);
     CHECK(r == 1, "click on info region returns 1");
     CHECK(s.ui.info_open == 1, "info_open toggled to 1");
     PASS();
@@ -373,10 +380,10 @@ static void test_zoom_clamp(void)
     TEST("zoom level clamps correctly");
     AppState s = {0};
     s.view.zoom_level = 10.0F;
-    gal_clamp_zoom_pan(&s);
+    gal_clamp_zoom_pan(&s.view, 1200, 800, 1.0F, 48.0F);
     CHECK(s.view.zoom_level <= 8.0F, "zoom clamped to max 8");
     s.view.zoom_level = 0.5F;
-    gal_clamp_zoom_pan(&s);
+    gal_clamp_zoom_pan(&s.view, 1200, 800, 1.0F, 48.0F);
     CHECK(s.view.zoom_level >= 1.0F, "zoom clamped to min 1");
     PASS();
 }
@@ -394,7 +401,7 @@ static void test_eviction(void)
     s.data.images[0].state = IMG_STATE_RESIDENT_GPU;
     s.gpu.tex_pool.slot_owner[0] = 0;
     s.gpu.tex_pool.last_used[0] = 0;
-    r_evict_texture(&s, 0);
+    r_evict_texture(&s.gpu, &s.data, 0);
     CHECK(s.data.images[0].texture_slot == -1, "slot cleared");
     CHECK(s.data.images[0].state == IMG_STATE_READY, "state is READY after eviction");
     CHECK(s.gpu.tex_pool.slot_owner[0] == -1, "owner reset");
@@ -412,7 +419,7 @@ static void test_full_cache_eviction(void)
     {
         s.gpu.full_slots[i].texture = (ID3D11Texture2D *) (uintptr_t) (1 + i);
     }
-    int slot = r_alloc_full_image_slot(&s);
+    int slot = r_alloc_full_image_slot(&s.gpu, &s.data, &s.view, s.data.grid_item_count);
     CHECK(slot >= 0 && slot < FULL_CACHE_SIZE, "eviction returned valid slot");
     CHECK(s.gpu.full_slots[slot].texture == NULL, "evicted slot texture is NULL");
     PASS();
@@ -429,7 +436,7 @@ static void test_select_full_image_reset(void)
     s.view.zoom_pan_x = 100.0F;
     s.view.zoom_pan_y = 200.0F;
     s.view.zoom_level = 1.0F;
-    gal_clamp_zoom_pan(&s);
+    gal_clamp_zoom_pan(&s.view, 1200, 800, 1.0F, 48.0F);
     CHECK(s.view.zoom_pan_x == 0.0F && s.view.zoom_pan_y == 0.0F, "pan reset when zoom==1");
     PASS();
 }

@@ -121,10 +121,10 @@ int ui_button(InstanceData *instances, int *inst_count, float x, float y, float 
     return hovered;
 }
 
-void ui_button_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
+void ui_button_text(TextState *txt, GpuState *r, UIState *ui, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->txt.dwrite_format_small_semibold,
-                        s->ui.theme.text_main);
+    r_draw_text_aligned(txt, r, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, txt->dwrite_format_small_semibold,
+                        ui->theme.text_main);
 }
 
 int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w, float h, float opacity, int active,
@@ -174,8 +174,8 @@ int ui_badge(InstanceData *instances, int *inst_count, float x, float y, float w
     return hovered;
 }
 
-void ui_badge_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
+void ui_badge_text(TextState *txt, GpuState *r, UIState *ui, const wchar_t *text, float x, float y, float w, float h)
 {
-    r_draw_text_aligned(s, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->txt.dwrite_format_small_semibold,
-                        s->ui.theme.text_main);
+    r_draw_text_aligned(txt, r, text, x, y, w, h, ALIGN_X_CENTER, ALIGN_Y_CENTER, txt->dwrite_format_small_semibold,
+                        ui->theme.text_main);
 }

@@ -25,17 +25,17 @@ static int skip_dir(const wchar_t *name)
     return (name[0] == L'.' || name[0] == L'$');
 }
 
-static int append_entry(AppState *s, const wchar_t *full, WIN32_FIND_DATAW *ffd)
+static int append_entry(DataState *data, const wchar_t *full, WIN32_FIND_DATAW *ffd)
 {
     uint64_t file_size = ((uint64_t) ffd->nFileSizeHigh << 32) | ffd->nFileSizeLow;
     uint64_t last_modified =
         ((uint64_t) ffd->ftLastWriteTime.dwHighDateTime << 32) | ffd->ftLastWriteTime.dwLowDateTime;
     uint64_t created_time = ((uint64_t) ffd->ftCreationTime.dwHighDateTime << 32) | ffd->ftCreationTime.dwLowDateTime;
-    ImageEntry *e = app_append_image_entry(s, full, ffd->cFileName, file_size, last_modified, created_time);
+    ImageEntry *e = app_append_image_entry(data, full, ffd->cFileName, file_size, last_modified, created_time);
     return e != NULL;
 }
 
-static void scan_recursive(const wchar_t *dir, AppState *s)
+static void scan_recursive(const wchar_t *dir, DataState *data)
 {
     wchar_t search[MAX_PATH_LEN];
     wcsncpy(search, dir, MAX_PATH_LEN - 3);
@@ -63,12 +63,12 @@ static void scan_recursive(const wchar_t *dir, AppState *s)
         if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         {
             if (!skip_dir(ffd.cFileName))
-                scan_recursive(full, s);
+                scan_recursive(full, data);
         }
         else
         {
             if (fs_has_image_extension(ffd.cFileName))
-                append_entry(s, full, &ffd);
+                append_entry(data, full, &ffd);
         }
     } while (FindNextFileW(h, &ffd));
     FindClose(h);
@@ -160,10 +160,10 @@ DWORD WINAPI fs_scan_thread(LPVOID param)
     return 0;
 }
 
-int fs_scan_directory(const wchar_t *path, AppState *s)
+int fs_scan_directory(const wchar_t *path, DataState *data)
 {
-    scan_recursive(path, s);
-    wcsncpy(s->data.current_dir, path, MAX_PATH_LEN - 1);
-    s->data.current_dir[MAX_PATH_LEN - 1] = L'\0';
-    return s->data.count;
+    scan_recursive(path, data);
+    wcsncpy(data->current_dir, path, MAX_PATH_LEN - 1);
+    data->current_dir[MAX_PATH_LEN - 1] = L'\0';
+    return data->count;
 }

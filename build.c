@@ -31,6 +31,7 @@
 
 // ── 4. Core / Utility Libraries ────────────────────────────────────────
 #include "lib/core/utils.c"
+#include "lib/core/logger.c"
 
 // ── 5. GPU Subsystem ────────────────────────────────────────────────────
 // Order: device.c first (includes system headers: d2d1.h, dwrite.h, etc.)

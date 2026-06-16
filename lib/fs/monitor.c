@@ -88,6 +88,7 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
         }
         else
         {
+            log_error(L"fm_thread_proc: ReadDirectoryChangesW failed (err=%lu)", GetLastError());
             // Short sleep on error; stop event is checked at the top of the loop
             Sleep(100);
         }
@@ -95,6 +96,7 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
     return 0;
 }
 
+// NOTE: fm_start_monitor needs AppState for the thread proc (it accesses hwnd and data).
 int fm_start_monitor(AppState *s, const wchar_t *directory)
 {
     if (s->worker.monitoring_active)
@@ -106,6 +108,7 @@ int fm_start_monitor(AppState *s, const wchar_t *directory)
     if (s->worker.dir_handle == INVALID_HANDLE_VALUE)
     {
         s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateFileW failed for %s (err=%lu)", directory, GetLastError());
         return 0;
     }
 
@@ -115,38 +118,38 @@ int fm_start_monitor(AppState *s, const wchar_t *directory)
     return 1;
 }
 
-void fm_stop_monitor(AppState *s)
+void fm_stop_monitor(WorkerState *worker)
 {
-    if (!s->worker.monitoring_active)
+    if (!worker->monitoring_active)
         return;
-    s->worker.monitoring_active = 0;
+    worker->monitoring_active = 0;
 
     // Signal stop event first
-    if (s->worker.monitor_stop_event)
-        SetEvent(s->worker.monitor_stop_event);
+    if (worker->monitor_stop_event)
+        SetEvent(worker->monitor_stop_event);
 
     // Cancel any pending ReadDirectoryChangesW so the thread can exit promptly
-    if (s->worker.dir_handle)
-        CancelIoEx(s->worker.dir_handle, NULL);
+    if (worker->dir_handle)
+        CancelIoEx(worker->dir_handle, NULL);
 
     // Wait for the monitor thread to exit first (before closing handles)
-    if (s->worker.monitor_thread)
+    if (worker->monitor_thread)
     {
-        WaitForSingleObject(s->worker.monitor_thread, INFINITE);
-        CloseHandle(s->worker.monitor_thread);
-        s->worker.monitor_thread = NULL;
+        WaitForSingleObject(worker->monitor_thread, INFINITE);
+        CloseHandle(worker->monitor_thread);
+        worker->monitor_thread = NULL;
     }
 
     // Close the directory handle after the thread has exited
-    if (s->worker.dir_handle)
+    if (worker->dir_handle)
     {
-        CloseHandle(s->worker.dir_handle);
-        s->worker.dir_handle = NULL;
+        CloseHandle(worker->dir_handle);
+        worker->dir_handle = NULL;
     }
 
-    if (s->worker.monitor_stop_event)
+    if (worker->monitor_stop_event)
     {
-        CloseHandle(s->worker.monitor_stop_event);
-        s->worker.monitor_stop_event = NULL;
+        CloseHandle(worker->monitor_stop_event);
+        worker->monitor_stop_event = NULL;
     }
 }

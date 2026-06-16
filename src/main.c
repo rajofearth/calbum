@@ -52,7 +52,8 @@ static int image_select_offset(AppState *s, int delta)
                 int new_active_idx = active_idx + delta;
                 if (new_active_idx >= 0 && new_active_idx < s->data.strip_image_count)
                 {
-                    gal_select_full_image(s, s->data.strip_image_grid_indices[new_active_idx]);
+                    gal_select_full_image(&s->data, &s->view, &s->gpu, &s->worker,
+                                          s->data.strip_image_grid_indices[new_active_idx], s->hwnd);
                     return 1;
                 }
             }
@@ -63,7 +64,7 @@ static int image_select_offset(AppState *s, int delta)
         int new_idx = s->view.selected_index + delta;
         if (new_idx >= 0 && new_idx < s->data.count)
         {
-            gal_select_full_image(s, new_idx);
+            gal_select_full_image(&s->data, &s->view, &s->gpu, &s->worker, new_idx, s->hwnd);
             return 1;
         }
         return 0;
@@ -174,10 +175,10 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
             if (found_idx != -1)
             {
                 ImageEntry *e = &g_state.data.images[found_idx];
-                int slot = r_alloc_texture_slot(&g_state, found_idx);
+                int slot = r_alloc_texture_slot(&g_state.gpu, &g_state.data, found_idx);
                 if (slot != -1)
                 {
-                    r_upload_texture(&g_state, slot, result->bc1_data);
+                    r_upload_texture(&g_state.gpu, slot, result->bc1_data);
                     e->texture_slot = (int16_t) slot;
                     e->state = IMG_STATE_RESIDENT_GPU;
                 }
@@ -239,7 +240,8 @@ static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
             if (found_idx == active_img_idx)
             {
                 // Create GPU texture from RGBA data
-                int slot_idx = r_alloc_full_image_slot(&g_state);
+                int slot_idx =
+                    r_alloc_full_image_slot(&g_state.gpu, &g_state.data, &g_state.view, g_state.data.grid_item_count);
                 if (slot_idx >= 0)
                 {
                     FullImageSlot *new_slot = &g_state.gpu.full_slots[slot_idx];
@@ -322,7 +324,8 @@ static void on_scan_progress(HWND hwnd, WPARAM wParam, LPARAM lParam)
     for (int i = 0; i < batch->count; i++)
     {
         ScanEntry *e = &batch->entries[i];
-        if (!app_append_image_entry(&g_state, e->path, e->filename, e->file_size, e->last_modified, e->created_time))
+        if (!app_append_image_entry(&g_state.data, e->path, e->filename, e->file_size, e->last_modified,
+                                    e->created_time))
             break;
     }
     g_state.worker.scan_progress = g_state.data.count;
@@ -352,17 +355,16 @@ static void on_scan_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
     g_state.data.grid_item_count = 0;
     g_state.data.strip_image_count = 0;
 
-    gal_apply_sort(&g_state);
+    gal_apply_sort(&g_state.data, &g_state.view);
     if (g_state.data.count > 0)
         g_state.view.selected_index = 0;
 
-    app_populate_grid_items(&g_state);
-    gal_update_layout(&g_state);
-    app_update_title(&g_state);
+    app_populate_grid_items(&g_state.data);
+    app_update_title(g_state.data.viewing_dir, g_state.hwnd);
 
     // Restart background threads
     fm_start_monitor(&g_state, g_state.data.current_dir);
-    aw_start_workers(&g_state);
+    aw_start_workers(&g_state.worker);
 
     g_state.needs_redraw = 1;
     InvalidateRect(hwnd, NULL, TRUE);
@@ -405,12 +407,11 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                     ((uint64_t) wfad.ftCreationTime.dwHighDateTime << 32) | wfad.ftCreationTime.dwLowDateTime;
             }
 
-            ImageEntry *e = app_append_image_entry(s, fc->path, fc->filename, file_size, last_modified, created_time);
+            ImageEntry *e =
+                app_append_image_entry(&s->data, fc->path, fc->filename, file_size, last_modified, created_time);
             if (e)
             {
-                gal_apply_sort(
-                    s); // Note: gal_apply_sort internally calls app_populate_grid_items(s) if grid_items is active
-                gal_update_layout(s);
+                gal_apply_sort(&s->data, &s->view);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
             }
@@ -425,7 +426,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 {
                     if (s->data.images[i].texture_slot != -1)
                     {
-                        r_evict_texture(s, s->data.images[i].texture_slot);
+                        r_evict_texture(&s->gpu, &s->data, s->data.images[i].texture_slot);
                     }
                     int remaining = s->data.count - i - 1;
                     if (remaining > 0)
@@ -433,7 +434,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                     s->data.count--;
                     if (s->data.grid_items)
                     {
-                        app_populate_grid_items(s);
+                        app_populate_grid_items(&s->data);
                     }
                     int limit = s->data.grid_items ? s->data.grid_item_count : s->data.count;
                     if (s->view.selected_index >= limit)
@@ -448,7 +449,6 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                     {
                         s->view.selected_index = 0;
                     }
-                    gal_update_layout(s);
                     g_state.needs_redraw = 1;
                     InvalidateRect(hwnd, NULL, TRUE);
                     break;
@@ -465,7 +465,7 @@ static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 {
                     if (s->data.images[i].texture_slot != -1)
                     {
-                        r_evict_texture(s, s->data.images[i].texture_slot);
+                        r_evict_texture(&s->gpu, &s->data, s->data.images[i].texture_slot);
                     }
                     s->data.images[i].state = IMG_STATE_NEW;
                     s->data.images[i].thumb_requested = 0;
@@ -492,13 +492,16 @@ static void on_paint(HWND hwnd)
     {
         if (g_state.view.view_mode == VIEW_GALLERY)
         {
-            gal_render_gallery(NULL, &g_state);
+            gal_render_gallery(NULL, &g_state.gpu, &g_state.txt, &g_state.data, &g_state.view, &g_state.ui,
+                               &g_state.worker, g_state.window_width, g_state.window_height, g_state.hwnd);
         }
         else
         {
-            gal_render_fullimage(NULL, &g_state);
+            gal_render_fullimage(NULL, &g_state.gpu, &g_state.txt, &g_state.data, &g_state.view, &g_state.ui,
+                                 &g_state.worker, g_state.window_width, g_state.window_height, g_state.hwnd);
         }
     }
+    g_state.needs_redraw = 0;
     EndPaint(hwnd, &ps);
 }
 
@@ -513,8 +516,7 @@ static void on_size(HWND hwnd)
 
     g_state.window_width = width;
     g_state.window_height = height;
-    r_resize(&g_state);
-    gal_update_layout(&g_state);
+    r_resize(&g_state.gpu, &g_state.txt, width, height, g_state.ui.dpi_scale);
     InvalidateRect(hwnd, NULL, TRUE);
 }
 
@@ -526,7 +528,7 @@ static void on_keydown(HWND hwnd, int vk)
         {
             case VK_ESCAPE:
             case VK_BACK:
-                gal_close_full(&g_state);
+                gal_close_full(&g_state.view, &g_state.gpu, &g_state.needs_redraw);
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
             case VK_LEFT:
@@ -545,7 +547,8 @@ static void on_keydown(HWND hwnd, int vk)
                 g_state.view.zoom_level *= 1.1F;
                 if (g_state.view.zoom_level > 8.0F)
                     g_state.view.zoom_level = 8.0F;
-                gal_clamp_zoom_pan(&g_state);
+                gal_clamp_zoom_pan(&g_state.view, g_state.window_width, g_state.window_height, g_state.ui.dpi_scale,
+                                   g_state.ui.layout.topbar_height);
                 g_state.view.zoom_ui_timer = 2.0F;
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
@@ -555,7 +558,8 @@ static void on_keydown(HWND hwnd, int vk)
             case VK_SUBTRACT:
             {
                 g_state.view.zoom_level /= 1.1F;
-                gal_clamp_zoom_pan(&g_state);
+                gal_clamp_zoom_pan(&g_state.view, g_state.window_width, g_state.window_height, g_state.ui.dpi_scale,
+                                   g_state.ui.layout.topbar_height);
                 g_state.view.zoom_ui_timer = 2.0F;
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
@@ -573,7 +577,8 @@ static void on_keydown(HWND hwnd, int vk)
             case VK_SPACE:
                 if (g_state.view.selected_index >= 0)
                 {
-                    gal_activate_item(&g_state, g_state.view.selected_index);
+                    gal_activate_item(&g_state.data, &g_state.view, &g_state.ui, &g_state.gpu, &g_state.worker,
+                                      g_state.view.selected_index, g_state.hwnd);
                     InvalidateRect(hwnd, NULL, TRUE);
                 }
                 break;
@@ -585,11 +590,10 @@ static void on_keydown(HWND hwnd, int vk)
                     app_get_parent_dir(g_state.data.viewing_dir, parent, MAX_PATH_LEN);
                     wcsncpy(g_state.data.viewing_dir, parent, MAX_PATH_LEN - 1);
                     g_state.data.viewing_dir[MAX_PATH_LEN - 1] = L'\0';
-                    app_populate_grid_items(&g_state);
+                    app_populate_grid_items(&g_state.data);
                     g_state.view.scroll_target_y = g_state.view.scroll_current_y = 0.0F;
                     g_state.view.selected_index = 0;
-                    gal_update_layout(&g_state);
-                    app_update_title(&g_state);
+                    app_update_title(g_state.data.viewing_dir, g_state.hwnd);
                     g_state.needs_redraw = 1;
                     InvalidateRect(hwnd, NULL, TRUE);
                 }
@@ -616,7 +620,9 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
 {
     if (g_state.view.view_mode == VIEW_FULLIMAGE)
     {
-        if (gal_handle_fullimage_click(&g_state, x, y))
+        if (gal_handle_fullimage_click(&g_state.data, &g_state.view, &g_state.ui, &g_state.gpu, &g_state.worker, x, y,
+                                       g_state.window_width, g_state.window_height, &g_state.needs_redraw,
+                                       g_state.hwnd))
         {
             InvalidateRect(hwnd, NULL, TRUE);
         }
@@ -632,51 +638,53 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
         return;
     }
 
-    if (gal_handle_ui_click(&g_state, x, y))
+    if (gal_handle_ui_click(&g_state.data, &g_state.view, &g_state.ui, x, y, g_state.window_width,
+                            &g_state.needs_redraw))
     {
         InvalidateRect(hwnd, NULL, TRUE);
         return;
     }
 
-	// Check scrollbar (drag thumb or click track to page up/down)
-	int ms = gal_max_scroll(&g_state);
-	if (ms > 0 && (float) x >= (float) g_state.window_width - (16.0F * g_state.ui.dpi_scale))
-	{
-	    // Match renderer's scrollbar math (gal_render_scrollbar)
-	    float render_track_y = 8.0F * g_state.ui.dpi_scale;
-	    float render_track_h = (float) g_state.window_height - (16.0F * g_state.ui.dpi_scale);
-	    float render_thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * render_track_h;
-	    if (render_thumb_h < 24.0F * g_state.ui.dpi_scale)
-	        render_thumb_h = 24.0F * g_state.ui.dpi_scale;
-	    float render_thumb_y = render_track_y +
-	        ((g_state.view.scroll_current_y / (float) ms) * (render_track_h - render_thumb_h));
+    // Check scrollbar (drag thumb or click track to page up/down)
+    int ms = gal_max_scroll(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height);
+    if (ms > 0 && (float) x >= (float) g_state.window_width - (16.0F * g_state.ui.dpi_scale))
+    {
+        // Match renderer's scrollbar math (gal_render_scrollbar)
+        float render_track_y = 8.0F * g_state.ui.dpi_scale;
+        float render_track_h = (float) g_state.window_height - (16.0F * g_state.ui.dpi_scale);
+        float render_thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * render_track_h;
+        if (render_thumb_h < 24.0F * g_state.ui.dpi_scale)
+            render_thumb_h = 24.0F * g_state.ui.dpi_scale;
+        float render_thumb_y =
+            render_track_y + ((g_state.view.scroll_current_y / (float) ms) * (render_track_h - render_thumb_h));
 
-	    if ((float) y >= render_thumb_y && (float) y <= render_thumb_y + render_thumb_h)
-	    {
-	        // Click on thumb → start dragging
-	        g_state.ui.is_dragging_scrollbar = 1;
-	        g_state.ui.drag_start_y = (float) y;
-	        g_state.ui.drag_start_scroll_y = g_state.view.scroll_current_y;
-	        SetCapture(hwnd);
-	        return;
-	    }
+        if ((float) y >= render_thumb_y && (float) y <= render_thumb_y + render_thumb_h)
+        {
+            // Click on thumb → start dragging
+            g_state.ui.is_dragging_scrollbar = 1;
+            g_state.ui.drag_start_y = (float) y;
+            g_state.ui.drag_start_scroll_y = g_state.view.scroll_current_y;
+            SetCapture(hwnd);
+            return;
+        }
 
-	    // Click on track → jump thumb to click position (instant)
-	    float scrollable_pixels = render_track_h - render_thumb_h;
-	    float ratio = (scrollable_pixels > 0.0F) ? ((float) y - render_track_y) / scrollable_pixels : 0.0F;
-	    if (ratio < 0.0F)
-	        ratio = 0.0F;
-	    if (ratio > 1.0F)
-	        ratio = 1.0F;
-	    float new_y = ratio * (float) ms;
-	    g_state.view.scroll_current_y = new_y;
-	    g_state.view.scroll_target_y = new_y;
-	    InvalidateRect(hwnd, NULL, TRUE);
-	    return;
-	}
+        // Click on track → jump thumb to click position (instant)
+        float scrollable_pixels = render_track_h - render_thumb_h;
+        float ratio = (scrollable_pixels > 0.0F) ? ((float) y - render_track_y) / scrollable_pixels : 0.0F;
+        if (ratio < 0.0F)
+            ratio = 0.0F;
+        if (ratio > 1.0F)
+            ratio = 1.0F;
+        float new_y = ratio * (float) ms;
+        g_state.view.scroll_current_y = new_y;
+        g_state.view.scroll_target_y = new_y;
+        InvalidateRect(hwnd, NULL, TRUE);
+        return;
+    }
 
     int idx;
-    if (gal_hit_test(&g_state, x, y, &idx))
+    if (gal_hit_test(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height, x, y,
+                     &idx))
     {
         g_state.view.selected_index = idx;
         g_state.needs_redraw = 1;
@@ -689,7 +697,7 @@ static void on_mouse_move(HWND hwnd, int x, int y)
     if (g_state.ui.is_dragging_scrollbar)
     {
         (void) x;
-        int ms = gal_max_scroll(&g_state);
+        int ms = gal_max_scroll(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height);
         if (ms > 0)
         {
             float track_h = (float) g_state.window_height - (16.0F * g_state.ui.dpi_scale);
@@ -723,7 +731,8 @@ static void on_mouse_move(HWND hwnd, int x, int y)
         g_state.view.zoom_pan_x = g_state.view.pan_orig_x + dx;
         g_state.view.zoom_pan_y = g_state.view.pan_orig_y + dy;
 
-        gal_clamp_zoom_pan(&g_state);
+        gal_clamp_zoom_pan(&g_state.view, g_state.window_width, g_state.window_height, g_state.ui.dpi_scale,
+                           g_state.ui.layout.topbar_height);
 
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd, NULL, TRUE);
@@ -753,9 +762,10 @@ static void on_lbutton_dblclk(HWND hwnd, int x, int y)
     if (g_state.view.view_mode != VIEW_GALLERY)
         return;
     int idx;
-    if (gal_hit_test(&g_state, x, y, &idx))
+    if (gal_hit_test(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height, x, y,
+                     &idx))
     {
-        gal_activate_item(&g_state, idx);
+        gal_activate_item(&g_state.data, &g_state.view, &g_state.ui, &g_state.gpu, &g_state.worker, idx, g_state.hwnd);
         InvalidateRect(hwnd, NULL, TRUE);
     }
 }
@@ -764,15 +774,16 @@ static void on_mousewheel(HWND hwnd, int delta)
 {
     if (g_state.view.view_mode == VIEW_GALLERY)
     {
-    	    float scroll_amount = (float) delta * 1.5F;
-    	    gal_scroll(&g_state, scroll_amount);
+        float scroll_amount = (float) delta * 1.5F;
+        gal_scroll(&g_state.view, scroll_amount, &g_state.needs_redraw);
         InvalidateRect(hwnd, NULL, TRUE);
     }
     else
     {
         float factor = (delta > 0) ? 1.1F : 0.9F;
         g_state.view.zoom_level *= factor;
-        gal_clamp_zoom_pan(&g_state);
+        gal_clamp_zoom_pan(&g_state.view, g_state.window_width, g_state.window_height, g_state.ui.dpi_scale,
+                           g_state.ui.layout.topbar_height);
         g_state.view.zoom_ui_timer = 2.0F;
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd, NULL, TRUE);
@@ -787,7 +798,7 @@ static void on_drop_files(HWND hwnd, HDROP hDrop)
     DWORD attr = GetFileAttributesW(path);
     if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
     {
-        app_load_folder(&g_state, path);
+        app_load_folder(&g_state, &g_state.gpu, &g_state.txt, path);
         InvalidateRect(hwnd, NULL, TRUE);
     }
 }
@@ -857,8 +868,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         case WM_DPICHANGED:
         {
             g_state.ui.dpi_scale = HIWORD(wParam) / 96.0F;
-            gal_update_layout_scales(&g_state);
-            gal_update_layout(&g_state);
+            gal_update_layout_scales(&g_state.ui);
+            gal_update_layout(&g_state.view, g_state.window_height);
             union
             {
                 LPARAM l;
@@ -942,32 +953,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     UINT dpi = GetDpiForWindow(g_state.hwnd);
     g_state.ui.dpi_scale = (float) dpi / 96.0F;
-    gal_update_layout_scales(&g_state);
+    gal_update_layout_scales(&g_state.ui);
 
     ShowWindow(g_state.hwnd, nShowCmd);
     UpdateWindow(g_state.hwnd);
 
     // Init WIC and D3D11
     il_init_wic();
-    if (!r_init(&g_state))
+    if (!r_init(&g_state.gpu, &g_state.txt, g_state.hwnd))
     {
         MessageBoxW(NULL,
                     L"Failed to initialize the D3D11 rendering engine. Please check your graphics driver or system "
                     L"compatibility.",
                     L"calbum — Rendering Init Failure", MB_OK | MB_ICONERROR);
         il_shutdown_wic();
-        app_shutdown(&g_state);
+        app_shutdown(&g_state, &g_state.gpu, &g_state.txt);
         return 1;
     }
+    // Set up viewport, render target, and D2D surface now that swap chain exists
+    r_resize(&g_state.gpu, &g_state.txt, g_state.window_width, g_state.window_height, g_state.ui.dpi_scale);
+
     theme_init(&g_state);
 
     // Start worker threads
-    aw_start_workers(&g_state);
+    aw_start_workers(&g_state.worker);
 
     // Load default folder
     wchar_t pictures_path[MAX_PATH_LEN];
     app_get_pictures_folder(pictures_path, MAX_PATH_LEN);
-    app_load_folder(&g_state, pictures_path);
+    app_load_folder(&g_state, &g_state.gpu, &g_state.txt, pictures_path);
     InvalidateRect(g_state.hwnd, NULL, TRUE);
 
     // Message loop with delta time
@@ -1005,7 +1019,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             }
         }
 
-        gal_tick_smooth_scroll(&g_state);
+        gal_tick_smooth_scroll(&g_state.view, g_state.window_height, g_state.delta_time, &g_state.needs_redraw);
 
         if (g_state.view.view_mode == VIEW_FULLIMAGE && g_state.view.zoom_ui_timer > 0.0F)
         {
@@ -1048,12 +1062,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 exit_loop:
 
     // Stop background threads first — they may still be using WIC / D3D resources
-    aw_stop_workers(&g_state);
-    fm_stop_monitor(&g_state);
+    aw_stop_workers(&g_state.worker);
+    fm_stop_monitor(&g_state.worker);
 
     // Now safe to tear down subsystems
-    r_shutdown(&g_state);
+    r_shutdown(&g_state.gpu, &g_state.txt);
     il_shutdown_wic();
-    app_shutdown(&g_state);
+    app_shutdown(&g_state, &g_state.gpu, &g_state.txt);
     return (int) msg.wParam;
 }

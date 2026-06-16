@@ -36,19 +36,19 @@ static void ensure_cache_dir()
 
 DWORD WINAPI aw_worker_thread(LPVOID param)
 {
-    AppState *s = (AppState *) param;
+    WorkerState *worker = (WorkerState *) param;
     ensure_cache_dir();
 
     for (;;)
     {
-        if (s->worker.worker_stop_event && WaitForSingleObject(s->worker.worker_stop_event, 0) == WAIT_OBJECT_0)
+        if (worker->worker_stop_event && WaitForSingleObject(worker->worker_stop_event, 0) == WAIT_OBJECT_0)
             return 0;
 
-        LoadRequest *req = (LoadRequest *) rb_try_pop(&s->worker.work_queue);
+        LoadRequest *req = (LoadRequest *) rb_try_pop(&worker->work_queue);
 
         if (!req)
         {
-            HANDLE events[2] = {s->worker.work_queue.nonempty, s->worker.worker_stop_event};
+            HANDLE events[2] = {worker->work_queue.nonempty, worker->worker_stop_event};
             DWORD wait = WaitForMultipleObjects(2, events, FALSE, INFINITE);
             if (wait == WAIT_OBJECT_0 + 1)
                 return 0;
@@ -82,7 +82,11 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
             if (!bc1)
             {
                 bc1 = il_load_and_compress(path, req->thumb_size, &bc1_size);
-                if (bc1)
+                if (!bc1)
+                {
+                    log_error(L"aw_worker: il_load_and_compress failed for %s", req->path);
+                }
+                else
                 {
                     hFile = CreateFileW(cache_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
                     if (hFile != INVALID_HANDLE_VALUE)
@@ -132,56 +136,63 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
     return 0;
 }
 
-int aw_start_workers(AppState *s)
+int aw_start_workers(WorkerState *worker)
 {
-    if (s->worker.worker_threads[0])
+    if (worker->worker_threads[0])
         return 1;
 
-    s->worker.worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    worker->worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!worker->worker_stop_event)
+        log_error(L"aw_start_workers: CreateEventW failed");
 
     for (int i = 0; i < NUM_WORKERS; i++)
     {
-        s->worker.worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, s, 0, NULL);
+        worker->worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, worker, 0, NULL);
+        if (!worker->worker_threads[i])
+            log_error(L"aw_start_workers: CreateThread failed for worker %d", i);
     }
     return 1;
 }
 
-void aw_stop_workers(AppState *s)
+void aw_stop_workers(WorkerState *worker)
 {
-    if (!s->worker.worker_threads[0])
+    if (!worker->worker_threads[0])
         return;
 
-    if (s->worker.worker_stop_event)
-        SetEvent(s->worker.worker_stop_event);
-    SetEvent(s->worker.work_queue.nonempty);
+    if (worker->worker_stop_event)
+        SetEvent(worker->worker_stop_event);
+    SetEvent(worker->work_queue.nonempty);
 
     for (int i = 0; i < NUM_WORKERS; i++)
     {
-        if (s->worker.worker_threads[i])
+        if (worker->worker_threads[i])
         {
-            WaitForSingleObject(s->worker.worker_threads[i], INFINITE);
-            CloseHandle(s->worker.worker_threads[i]);
-            s->worker.worker_threads[i] = NULL;
+            WaitForSingleObject(worker->worker_threads[i], INFINITE);
+            CloseHandle(worker->worker_threads[i]);
+            worker->worker_threads[i] = NULL;
         }
     }
-    if (s->worker.worker_stop_event)
+    if (worker->worker_stop_event)
     {
-        CloseHandle(s->worker.worker_stop_event);
-        s->worker.worker_stop_event = NULL;
+        CloseHandle(worker->worker_stop_event);
+        worker->worker_stop_event = NULL;
     }
 }
 
-int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND hwnd)
+int aw_request_thumbnail(WorkerState *worker, const wchar_t *path, int thumb_size, HWND hwnd)
 {
     LoadRequest *req = (LoadRequest *) malloc(sizeof(LoadRequest));
     if (!req)
+    {
+        log_error(L"aw_request: malloc failed");
         return 0;
+    }
     wcsncpy(req->path, path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
     req->thumb_size = thumb_size;
     req->target_hwnd = hwnd;
     req->is_full_image = 0;
 
-    if (rb_push(&s->worker.work_queue, req))
+    if (rb_push(&worker->work_queue, req))
     {
         return 1;
     }
@@ -189,17 +200,20 @@ int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND 
     return 0;
 }
 
-int aw_request_full_image(AppState *s, const wchar_t *path, HWND hwnd)
+int aw_request_full_image(WorkerState *worker, const wchar_t *path, HWND hwnd)
 {
     LoadRequest *req = (LoadRequest *) malloc(sizeof(LoadRequest));
     if (!req)
+    {
+        log_error(L"aw_request: malloc failed");
         return 0;
+    }
     wcsncpy(req->path, path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
     req->thumb_size = 0;
     req->target_hwnd = hwnd;
     req->is_full_image = 1;
 
-    if (rb_push(&s->worker.work_queue, req))
+    if (rb_push(&worker->work_queue, req))
     {
         return 1;
     }
