@@ -1,5 +1,7 @@
-#include "types.h"
-#include "utils.h"
+// =========================================================================
+// lib/core/utils.c — Utility functions
+// =========================================================================
+#include "src/types.h"
 #include <stdio.h>
 
 void format_size(uint64_t bytes, wchar_t *buf, int len)

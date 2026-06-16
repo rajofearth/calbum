@@ -1,10 +1,8 @@
 // =========================================================================
 // gallery.c — Gallery grid using D3D11 instanced rendering
 // =========================================================================
-#include "layout.h"
 #include "types.h"
-#include "ui.h"
-#include "utils.h"
+#include "../lib/ui/ui.h"
 #include <d2d1.h>
 #include <math.h>
 

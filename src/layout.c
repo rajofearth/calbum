@@ -1,5 +1,4 @@
 #include "types.h"
-#include "layout.h"
 #include <math.h>
 
 void gal_calc_layout(const AppState *s, GridLayout *out)

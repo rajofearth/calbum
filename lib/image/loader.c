@@ -1,7 +1,7 @@
 // =========================================================================
 // image_loader.c — WIC + BC1 compression
 // =========================================================================
-#include "types.h"
+#include "src/types.h"
 #include <stdio.h>
 #include <stdlib.h>
 

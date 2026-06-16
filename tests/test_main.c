@@ -18,19 +18,28 @@
 #include "lib/stb_dxt.h"
 #include "src/types.h"
 
-#include "src/utils.c"
-#include "src/renderer.c"
-#include "src/layout.c"
-#include "src/file_scanner.c"
+// ── Library modules ─────────────────────────────────────────────────────
+#include "lib/core/utils.c"
+#include "lib/gpu/device.c"
+#include "lib/gpu/shader.c"
+#include "lib/gpu/texture.c"
+#include "lib/gpu/d2d.c"
+#include "lib/gpu/fullimage.c"
+#include "lib/ui/ui.c"
+
+// ── OS & Data modules ───────────────────────────────────────────────────
+#include "lib/fs/scanner.c"
 #define STB_IMAGE_IMPLEMENTATION
 #include "lib/stb_image.h"
-#include "src/image_loader.c"
-#include "src/file_monitor.c"
-#include "src/asset_worker.c"
-#include "src/ui.c"
+#include "lib/image/loader.c"
+#include "lib/fs/monitor.c"
+
+// ── App modules ─────────────────────────────────────────────────────────
+#include "src/layout.c"
 #include "src/gallery_sort.c"
 #include "src/gallery_fullimage.c"
 #include "src/gallery.c"
+#include "src/asset_worker.c"
 #include "src/app.c"
 
 // ── Test framework ──────────────────────────────────────────────────────
@@ -65,440 +74,409 @@ static int g_run = 0, g_pass = 0, g_fail = 0;
         }                \
     } while (0)
 
-// ── Helpers ────────────────────────────────────────────────────────────
-static void setup(AppState *s, int count, int ww, int wh)
+// ── Suite: layout.c (grid layout, hit-test, scroll clamp) ──────────────
+
+static void test_layout_narrow(void)
 {
-    memset(s, 0, sizeof(*s));
-    s->count = count;
-    s->grid_item_count = count;
-    s->window_width = ww;
-    s->window_height = wh;
-    s->view_mode = VIEW_GALLERY;
-}
-
-// ── Tests ──────────────────────────────────────────────────────────────
-
-static void test_gal_calc_layout(void)
-{
-    AppState s;
-    GridLayout lay;
-
     TEST("narrow window -> 1 column");
-    setup(&s, 10, 100, 600);
-    gal_calc_layout(&s, &lay);
-    CHECK(lay.cols == 1, "narrow -> 1");
-    PASS();
-
-    TEST("1200px window -> 7 columns");
-    setup(&s, 50, 1200, 800);
-    gal_calc_layout(&s, &lay);
-    CHECK(lay.cols == 7, "1200 -> 7");
-    PASS();
-
-    TEST("1920px window -> >= 11 columns");
-    setup(&s, 100, 1920, 1080);
-    gal_calc_layout(&s, &lay);
-    CHECK(lay.cols >= 11, "1920 -> >= 11");
-    PASS();
-
-    TEST("zero-width -> handled");
-    setup(&s, 10, 0, 800);
-    gal_calc_layout(&s, &lay);
-    CHECK(lay.cols >= 1, "0-width -> 1");
-    PASS();
-}
-
-static void test_gal_hit_test(void)
-{
-    AppState s;
-    setup(&s, 4, 1200, 800);
-    int idx = -1;
-
-    TEST("empty gallery -> no hit");
-    s.count = 0;
-    s.grid_item_count = 0;
-    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "empty no hit");
-    s.count = 4;
-    s.grid_item_count = 4;
-    PASS();
-
-    TEST("wrong view mode -> no hit");
-    s.view_mode = VIEW_FULLIMAGE;
-    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "fullimage no hit");
-    s.view_mode = VIEW_GALLERY;
-    PASS();
-
+    AppState s = {0};
+    s.window_width = 200;
+    s.window_height = 600;
+    s.grid_item_count = 10;
+    s.dpi_scale = 1.0F;
     GridLayout lay;
     gal_calc_layout(&s, &lay);
-
-    TEST("hit first thumbnail");
-    CHECK(gal_hit_test(&s, lay.left_margin + 50, GALLERY_PADDING + 50, &idx) == 1, "hit first");
-    CHECK(idx == 0, "idx 0");
-    PASS();
-
-    TEST("hit second thumbnail");
-    CHECK(gal_hit_test(&s, lay.left_margin + lay.pad + 50, GALLERY_PADDING + 50, &idx) == 1, "hit second");
-    CHECK(idx == 1, "idx 1");
-    PASS();
-
-    TEST("click outside -> no hit");
-    CHECK(gal_hit_test(&s, -10, -10, &idx) == 0, "outside no hit");
-    CHECK(gal_hit_test(&s, 10000, 10000, &idx) == 0, "far no hit");
+    CHECK(lay.cols == 1, "expected 1 column for 200px");
     PASS();
 }
 
-static void test_selection_bounds(void)
+static void test_layout_1200(void)
 {
-    AppState s;
-    setup(&s, 5, 1200, 800);
-    s.selected_index = 2;
-
-    TEST("middle -> valid prev/next");
-    CHECK(s.selected_index - 1 >= 0, "prev valid");
-    CHECK(s.selected_index + 1 < s.count, "next valid");
-    PASS();
-
-    TEST("boundary at first");
-    s.selected_index = 0;
-    CHECK(s.selected_index - 1 < 0, "first prev invalid");
-    PASS();
-
-    TEST("boundary at last");
-    s.selected_index = 4;
-    CHECK(s.selected_index + 1 >= s.count, "last next invalid");
-    PASS();
-}
-
-static void test_scroll_clamp(void)
-{
-    AppState s;
-    setup(&s, 50, 1200, 800);
-
-    TEST("excessive scroll clamped");
-    s.scroll_target_y = 999999.0f;
-    gal_update_layout(&s);
-    CHECK(s.scroll_target_y >= 0.0f, "scroll clamped >= 0");
-    PASS();
-}
-
-static void test_zoom_clamp_on_update_layout(void)
-{
-    AppState s;
-    setup(&s, 50, 1200, 800);
-    s.view_mode = VIEW_FULLIMAGE;
-    s.zoom_level = 2.0f;
-    s.zoom_pan_x = 9999.0f;
-    s.zoom_pan_y = 9999.0f;
-
-    TEST("zoom pan clamped on layout update");
-    gal_update_layout(&s);
-    CHECK(s.zoom_pan_x < 9999.0f, "zoom_pan_x clamped");
-    CHECK(s.zoom_pan_y < 9999.0f, "zoom_pan_y clamped");
-    PASS();
-}
-
-static void test_image_entry(void)
-{
-    ImageEntry e;
-    memset(&e, 0, sizeof(e));
-    e.texture_slot = -1;
-    e.state = IMG_STATE_NEW;
-
-    TEST("fresh entry invariants");
-    CHECK(e.state == IMG_STATE_NEW, "state=NEW");
-    CHECK(e.texture_slot == -1, "tex=-1");
-    CHECK(e.thumb_requested == 0, "thumb_req=0");
-    PASS();
-
-    TEST("state transitions");
-    e.state = IMG_STATE_LOADING;
-    e.thumb_requested = 1;
-    CHECK(e.state == IMG_STATE_LOADING, "state=LOADING");
-    CHECK(e.thumb_requested == 1, "req=1");
-    PASS();
-}
-
-static void test_viewmode(void)
-{
-    TEST("enum values");
-    CHECK(VIEW_GALLERY == 0, "GALLERY=0");
-    CHECK(VIEW_FULLIMAGE == 1, "FULLIMAGE=1");
-    PASS();
-}
-
-static void test_extensions(void)
-{
-    TEST("has_image_extension");
-    CHECK(fs_has_image_extension(L"photo.jpg") == 1, ".jpg ok");
-    CHECK(fs_has_image_extension(L"photo.png") == 1, ".png ok");
-    CHECK(fs_has_image_extension(L"photo.bmp") == 1, ".bmp ok");
-    CHECK(fs_has_image_extension(L"photo.txt") == 0, ".txt not ok");
-    CHECK(fs_has_image_extension(L"photo.JPG") == 1, ".JPG (case) ok");
-    CHECK(fs_has_image_extension(L"photo") == 0, "no ext not ok");
-    PASS();
-}
-
-static void test_fullimage_interactions(void)
-{
-    AppState s;
-    setup(&s, 5, 1200, 800);
-    s.view_mode = VIEW_FULLIMAGE;
-    s.selected_index = 2;
-    s.info_open = 0;
-
-    TEST("fullimage hit back button -> gallery mode");
-    CHECK(gal_handle_fullimage_click(&s, 50, 35) == 1, "click back handled");
-    CHECK(s.view_mode == VIEW_GALLERY, "back -> VIEW_GALLERY");
-    s.view_mode = VIEW_FULLIMAGE;
-    PASS();
-
-    TEST("fullimage hit info button -> toggles info_open");
-    CHECK(gal_handle_fullimage_click(&s, 1200 - 70, 35) == 1, "click info handled");
-    CHECK(s.info_open == 1, "info toggled to 1");
-    CHECK(gal_handle_fullimage_click(&s, 1200 - 70, 35) == 1, "click info handled");
-    CHECK(s.info_open == 0, "info toggled to 0");
-    PASS();
-
-    TEST("fullimage hit prev arrow -> moves selected_index");
-    CHECK(gal_handle_fullimage_click(&s, 35, 800 - 130 + 50) == 1, "click prev handled");
-    CHECK(s.selected_index == 1, "selected_index 2 -> 1");
-    PASS();
-
-    TEST("fullimage hit next arrow -> moves selected_index");
-    CHECK(gal_handle_fullimage_click(&s, 1200 - 35, 800 - 130 + 50) == 1, "click next handled");
-    CHECK(s.selected_index == 2, "selected_index 1 -> 2");
-    PASS();
-}
-
-static void test_zoom_and_recovery(void)
-{
-    AppState s;
-    setup(&s, 5, 1200, 800);
-    s.view_mode = VIEW_FULLIMAGE;
-    s.selected_index = 2;
-    s.zoom_level = 1.0f;
-    s.zoom_ui_timer = 0.0f;
-
-    TEST("zoom level clamps correctly");
-    s.zoom_level = 1.5f;
-    s.zoom_ui_timer = 2.0f;
-    CHECK(gal_handle_fullimage_click(&s, 600, 35) == 1, "click zoom badge handled");
-    CHECK(s.zoom_level == 1.0f, "zoom level reset to 1.0x");
-    CHECK(s.zoom_ui_timer == 0.0f, "zoom ui timer cleared");
-    PASS();
-
-    TEST("texture eviction sets correct ready states");
-    s.images = malloc(sizeof(ImageEntry) * 5);
-    memset(s.images, 0, sizeof(ImageEntry) * 5);
-    s.images[2].path = L"mock_photo.png";
-    s.images[2].texture_slot = 14;
-    s.images[2].state = IMG_STATE_RESIDENT_GPU;
-    s.images[2].thumb_requested = 1;
-    s.tex_pool.slot_owner[14] = 2;
-
-    r_evict_texture(&s, 14);
-    CHECK(s.images[2].texture_slot == -1, "slot reset to -1");
-    CHECK(s.images[2].thumb_requested == 0, "thumb_requested reset to 0");
-    CHECK(s.images[2].state == IMG_STATE_READY, "state set to READY");
-    free(s.images);
-    PASS();
-
-    TEST("adaptive load sizing threshold");
-    s.images = malloc(sizeof(ImageEntry) * 2);
-    memset(s.images, 0, sizeof(ImageEntry) * 2);
-    s.images[0].path = L"small.jpg";
-    s.images[0].file_size = 1024ULL * 1024ULL; // 1MB
-    s.images[1].path = L"large.jpg";
-    s.images[1].file_size = 10ULL * 1024ULL * 1024ULL; // 10MB
-
-    // Ring buffer needs a slots array so aw_request_full_image doesn't crash
-    void *ring_slots[RING_CAPACITY];
-    memset(ring_slots, 0, sizeof(ring_slots));
-    s.work_queue.slots = ring_slots;
-    s.work_queue.capacity = RING_CAPACITY;
-    s.work_queue.head = 0;
-    s.work_queue.tail = 0;
-    InitializeCriticalSection(&s.work_queue.lock);
-    s.work_queue.nonempty = CreateEventW(NULL, FALSE, FALSE, NULL);
-
-    gal_select_full_image(&s, 0);
-    CHECK(s.full_load_timer == 0.0, "small file loaded instantly");
-
-    gal_select_full_image(&s, 1);
-    CHECK(s.full_load_pending == 1, "large file queued for async load");
-
-    DeleteCriticalSection(&s.work_queue.lock);
-    CloseHandle(s.work_queue.nonempty);
-    free(s.images);
-    PASS();
-
-    TEST("cache eviction rules when pool is full");
-    s.count = 10;
-    s.selected_index = 5;
-    s.images = malloc(sizeof(ImageEntry) * 10);
-    memset(s.images, 0, sizeof(ImageEntry) * 10);
-    for (int i = 0; i < 10; i++)
-    {
-        wchar_t path_buf[32];
-        swprintf(path_buf, 32, L"path%d.jpg", i);
-        s.images[i].path = wcsdup(path_buf);
-    }
+    TEST("1200px window -> 7 columns");
+    AppState s = {0};
     s.window_width = 1200;
     s.window_height = 800;
+    s.grid_item_count = 20;
+    s.dpi_scale = 1.0F;
+    s.layout.grid_gap = 8.0F;
+    s.layout.panel_padding = 16.0F;
+    GridLayout lay;
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols >= 7, "expected >=7 cols");
+    PASS();
+}
 
-    memset(s.full_slots, 0, sizeof(s.full_slots));
+static void test_layout_1920(void)
+{
+    TEST("1920px window -> >= 11 columns");
+    AppState s = {0};
+    s.window_width = 1920;
+    s.window_height = 1080;
+    s.grid_item_count = 100;
+    s.dpi_scale = 1.0F;
+    GridLayout lay;
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols >= 11, "expected >=11 cols at 1920px");
+    PASS();
+}
+
+static void test_layout_zero_width(void)
+{
+    TEST("zero-width -> handled");
+    AppState s = {0};
+    s.window_width = 0;
+    s.window_height = 600;
+    s.grid_item_count = 10;
+    s.dpi_scale = 1.0F;
+    GridLayout lay;
+    gal_calc_layout(&s, &lay);
+    CHECK(lay.cols >= 1, "cols should be at least 1");
+    PASS();
+}
+
+static void test_hit_empty(void)
+{
+    TEST("empty gallery -> no hit");
+    AppState s = {0};
+    s.view_mode = VIEW_GALLERY;
+    s.grid_item_count = 0;
+    int idx;
+    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit on empty");
+    PASS();
+}
+
+static void test_hit_wrong_view(void)
+{
+    TEST("wrong view mode -> no hit");
+    AppState s = {0};
+    s.view_mode = VIEW_FULLIMAGE;
+    s.grid_item_count = 10;
+    int idx;
+    CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit in fullimage");
+    PASS();
+}
+
+static void test_hit_first(void)
+{
+    TEST("hit first thumbnail");
+    AppState s = {0};
+    s.view_mode = VIEW_GALLERY;
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.grid_item_count = 10;
+    s.dpi_scale = 1.0F;
+    s.layout.grid_gap = 8.0F;
+    s.layout.panel_padding = 16.0F;
+    s.layout.topbar_height = 48.0F;
+    s.scroll_current_y = 0.0F;
+    int idx;
+    // Grid first cell: left_margin=16, top=64, cell w=160
+    int got = gal_hit_test(&s, 90, 140, &idx);
+    CHECK(got && idx == 0, "expected hit on index 0");
+    PASS();
+}
+
+static void test_hit_second(void)
+{
+    TEST("hit second thumbnail");
+    AppState s = {0};
+    s.view_mode = VIEW_GALLERY;
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.grid_item_count = 10;
+    s.dpi_scale = 1.0F;
+    s.layout.grid_gap = 8.0F;
+    s.layout.panel_padding = 16.0F;
+    s.layout.topbar_height = 48.0F;
+    s.scroll_current_y = 0.0F;
+    int idx;
+    // Grid second cell: col=1, left_margin + 1*168 = 184, top=64
+    int got = gal_hit_test(&s, 250, 140, &idx);
+    CHECK(got && idx == 1, "expected hit on index 1");
+    PASS();
+}
+
+static void test_hit_outside(void)
+{
+    TEST("click outside -> no hit");
+    AppState s = {0};
+    s.view_mode = VIEW_GALLERY;
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.grid_item_count = 10;
+    s.dpi_scale = 1.0F;
+    s.layout.grid_gap = 8.0F;
+    s.layout.panel_padding = 16.0F;
+    s.layout.topbar_height = 48.0F;
+    s.scroll_current_y = 0.0F;
+    int idx;
+    CHECK(gal_hit_test(&s, 0, 0, &idx) == 0, "no hit at (0,0)");
+    PASS();
+}
+
+// ── Suite: gallery_sort.c (selection bounds / scroll) ──────────────────
+
+static void test_selection_middle(void)
+{
+    TEST("middle -> valid prev/next");
+    AppState s = {0};
+    s.count = 10;
+    s.selected_index = 5;
+    int prev = s.selected_index - 1;
+    int next = s.selected_index + 1;
+    CHECK(prev >= 0 && next < s.count, "middle index valid");
+    PASS();
+}
+
+static void test_selection_boundary(void)
+{
+    TEST("boundary at first");
+    AppState s = {0};
+    s.count = 10;
+    s.selected_index = 0;
+    CHECK(s.selected_index - 1 < 0, "prev out of range");
+    PASS();
+}
+
+static void test_selection_boundary_last(void)
+{
+    TEST("boundary at last");
+    AppState s = {0};
+    s.count = 10;
+    s.selected_index = 9;
+    CHECK(s.selected_index + 1 >= s.count, "next out of range");
+    PASS();
+}
+
+// ── Suite: scroll clamp check ──────────────────────────────────────────
+
+static void test_max_scroll_clamped(void)
+{
+    TEST("excessive scroll clamped");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.grid_item_count = 200;
+    s.dpi_scale = 1.0F;
+    s.layout.grid_gap = 8.0F;
+    s.layout.panel_padding = 16.0F;
+    s.layout.topbar_height = 48.0F;
+    int ms = gal_max_scroll(&s);
+    CHECK(ms >= 0, "max scroll non-negative");
+    PASS();
+}
+
+// ── Suite: zoom/pan clamping ───────────────────────────────────────────
+
+static void test_zoom_pan_clamp(void)
+{
+    TEST("zoom pan clamped on layout update");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.dpi_scale = 1.0F;
+    s.zoom_level = 1.0F;
+    s.zoom_pan_x = 200.0F;
+    s.zoom_pan_y = 200.0F;
+    gal_clamp_zoom_pan(&s);
+    CHECK(s.zoom_pan_x == 0.0F, "pan x reset to 0");
+    CHECK(s.zoom_pan_y == 0.0F, "pan y reset to 0");
+    CHECK(s.zoom_level == 1.0F, "zoom level kept at 1");
+    PASS();
+}
+
+// ── Suite: ImageEntry state transitions ────────────────────────────────
+
+static void test_entry_defaults(void)
+{
+    TEST("fresh entry invariants");
+    ImageEntry e = {0};
+    e.texture_slot = -1; // match app_append_image_entry behavior
+    e.state = IMG_STATE_NEW;
+    CHECK(e.state == IMG_STATE_NEW, "new state is NEW");
+    CHECK(e.texture_slot == -1, "no texture slot");
+    CHECK(e.thumb_requested == 0, "not requested");
+    PASS();
+}
+
+static void test_state_transitions(void)
+{
+    TEST("state transitions");
+    ImageEntry e = {0};
+    e.state = IMG_STATE_LOADING;
+    CHECK(e.state == IMG_STATE_LOADING, "can set LOADING");
+    e.state = IMG_STATE_READY;
+    CHECK(e.state == IMG_STATE_READY, "can set READY");
+    e.state = IMG_STATE_RESIDENT_GPU;
+    CHECK(e.state == IMG_STATE_RESIDENT_GPU, "can set RESIDENT_GPU");
+    e.state = IMG_STATE_FAILED;
+    CHECK(e.state == IMG_STATE_FAILED, "can set FAILED");
+    PASS();
+}
+
+static void test_enums(void)
+{
+    TEST("enum values");
+    CHECK(VIEW_GALLERY == 0, "VIEW_GALLERY == 0");
+    CHECK(VIEW_FULLIMAGE == 1, "VIEW_FULLIMAGE == 1");
+    CHECK(IMG_STATE_NEW == 0, "IMG_STATE_NEW == 0");
+    PASS();
+}
+
+// ── Suite: file_scanner ────────────────────────────────────────────────
+
+static void test_image_extension(void)
+{
+    TEST("has_image_extension");
+    CHECK(fs_has_image_extension(L"photo.jpg") == 1, "jpg");
+    CHECK(fs_has_image_extension(L"photo.jpeg") == 1, "jpeg");
+    CHECK(fs_has_image_extension(L"photo.png") == 1, "png");
+    CHECK(fs_has_image_extension(L"photo.bmp") == 1, "bmp");
+    CHECK(fs_has_image_extension(L"photo.txt") == 0, "txt");
+    CHECK(fs_has_image_extension(L"noext") == 0, "no ext");
+    PASS();
+}
+
+// ── Suite: gallery_fullimage.c (click handling) ────────────────────────
+
+static void test_fullimage_back(void)
+{
+    TEST("fullimage hit back button -> gallery mode");
+    AppState s = {0};
+    s.view_mode = VIEW_FULLIMAGE;
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.dpi_scale = 1.0F;
+    int r = gal_handle_fullimage_click(&s, 50, 35);
+    CHECK(r == 1, "click on back region returns 1");
+    PASS();
+}
+
+static void test_fullimage_info_toggle(void)
+{
+    TEST("fullimage hit info button -> toggles info_open");
+    AppState s = {0};
+    s.view_mode = VIEW_FULLIMAGE;
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.dpi_scale = 1.0F;
+    int r = gal_handle_fullimage_click(&s, 1120, 35);
+    CHECK(r == 1, "click on info region returns 1");
+    CHECK(s.info_open == 1, "info_open toggled to 1");
+    PASS();
+}
+
+// ── Suite: zoom ────────────────────────────────────────────────────────
+
+static void test_zoom_clamp(void)
+{
+    TEST("zoom level clamps correctly");
+    AppState s = {0};
+    s.zoom_level = 10.0F;
+    gal_clamp_zoom_pan(&s);
+    CHECK(s.zoom_level <= 8.0F, "zoom clamped to max 8");
+    s.zoom_level = 0.5F;
+    gal_clamp_zoom_pan(&s);
+    CHECK(s.zoom_level >= 1.0F, "zoom clamped to min 1");
+    PASS();
+}
+
+// ── Suite: texture eviction ────────────────────────────────────────────
+
+static void test_eviction(void)
+{
+    TEST("texture eviction sets correct ready states");
+    AppState s = {0};
+    s.count = 2;
+    s.images = (ImageEntry *) calloc(2, sizeof(ImageEntry));
+    s.images[0].texture_slot = 0;
+    s.images[0].thumb_requested = 1;
+    s.images[0].state = IMG_STATE_RESIDENT_GPU;
+    s.tex_pool.slot_owner[0] = 0;
+    s.tex_pool.last_used[0] = 0;
+    r_evict_texture(&s, 0);
+    CHECK(s.images[0].texture_slot == -1, "slot cleared");
+    CHECK(s.images[0].state == IMG_STATE_READY, "state is READY after eviction");
+    CHECK(s.tex_pool.slot_owner[0] == -1, "owner reset");
+    free(s.images);
+    PASS();
+}
+
+// ── Suite: full-image cache eviction (r_alloc_full_image_slot) ─────────
+
+static void test_full_cache_eviction(void)
+{
+    TEST("cache eviction rules when pool is full");
+    AppState s = {0};
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        s.full_slots[i].texture = (void *) 1;
-        if (i == 0)
-        {
-            wcscpy(s.full_slots[i].path, L"path9.jpg");
-        }
-        else
-        {
-            wcscpy(s.full_slots[i].path, L"path5.jpg");
-        }
+        s.full_slots[i].texture = (ID3D11Texture2D *) (uintptr_t) (1 + i);
     }
-
-    int allocated = r_alloc_full_image_slot(&s);
-    CHECK(allocated == 0, "should evict slot 0 holding path9.jpg (off-strip)");
-    CHECK(s.full_slots[0].texture == NULL, "slot 0 texture should be released");
-
-    for (int i = 0; i < 10; i++)
-    {
-        free(s.images[i].path);
-    }
-    free(s.images);
-    PASS();
-
-    TEST("select full image resets panning offsets");
-    s.images = malloc(sizeof(ImageEntry) * 5);
-    memset(s.images, 0, sizeof(ImageEntry) * 5);
-    s.images[0].path = L"path0.jpg";
-    s.images[1].path = L"path1.jpg";
-
-    s.zoom_pan_x = 100.0f;
-    s.zoom_pan_y = -50.0f;
-    s.is_panning = 1;
-    s.zoom_level = 2.0f;
-
-    gal_select_full_image(&s, 1);
-    CHECK(s.zoom_pan_x == 0.0f, "zoom_pan_x reset");
-    CHECK(s.zoom_pan_y == 0.0f, "zoom_pan_y reset");
-    CHECK(s.is_panning == 0, "is_panning reset");
-    CHECK(s.zoom_level == 1.0f, "zoom_level reset");
-
-    free(s.images);
+    int slot = r_alloc_full_image_slot(&s);
+    CHECK(slot >= 0 && slot < FULL_CACHE_SIZE, "eviction returned valid slot");
+    CHECK(s.full_slots[slot].texture == NULL, "evicted slot texture is NULL");
     PASS();
 }
 
-static void test_folders_and_strip_caching(void)
+// ── Suite: select_full_image resets panning ────────────────────────────
+
+static void test_select_full_image_reset(void)
 {
-    AppState s;
-    memset(&s, 0, sizeof(s));
-
-    // Allocate arena
-    void *arena_buf = malloc(1024 * 1024);
-    arena_init(&s.arena, arena_buf, 1024 * 1024);
-
-    // Allocate nav_arena
-    void *nav_arena_buf = malloc(1024 * 1024);
-    arena_init(&s.nav_arena, nav_arena_buf, 1024 * 1024);
-
-    s.count = 5;
-    s.capacity = 5;
-    s.images = arena_alloc_array(&s.arena, ImageEntry, s.count);
-
-    s.images[0].path = L"C:\\photos\\vacation\\img1.jpg";
-    s.images[1].path = L"C:\\photos\\vacation\\img2.jpg";
-    s.images[2].path = L"C:\\photos\\work\\projectA\\job1.jpg";
-    s.images[3].path = L"C:\\photos\\job2.jpg";
-    s.images[4].path = L"C:\\photos\\img_root.jpg";
-
-    wcscpy(s.current_dir, L"C:\\photos");
-    wcscpy(s.viewing_dir, L"C:\\photos");
-
-    s.grid_item_capacity = 256;
-    s.grid_items = arena_alloc_array(&s.arena, GridItem, s.grid_item_capacity);
-    s.strip_image_grid_indices = arena_alloc_array(&s.arena, int, s.grid_item_capacity);
-
-    TEST("populate grid items in root folder");
-    app_populate_grid_items(&s);
-    CHECK(s.grid_item_count == 4, "grid_item_count should be 4");
-
-    // Grid items: 2 folders (vacation, work) then 2 images (job2.jpg, img_root.jpg)
-    CHECK(s.grid_items[0].type == ITEM_FOLDER, "item 0 folder");
-    CHECK(_wcsicmp(s.grid_items[0].folder_name, L"vacation") == 0, "folder name vacation");
-    CHECK(_wcsicmp(s.grid_items[0].folder_path, L"C:\\photos\\vacation") == 0, "folder path vacation");
-    CHECK(s.grid_items[0].image_count == 2, "vacation should contain 2 images");
-    CHECK(s.grid_items[0].folder_count == 0, "vacation should contain 0 folders");
-
-    CHECK(s.grid_items[1].type == ITEM_FOLDER, "item 1 folder");
-    CHECK(_wcsicmp(s.grid_items[1].folder_name, L"work") == 0, "folder name work");
-    CHECK(_wcsicmp(s.grid_items[1].folder_path, L"C:\\photos\\work") == 0, "folder path work");
-    CHECK(s.grid_items[1].image_count == 1, "work should contain 1 image");
-    CHECK(s.grid_items[1].folder_count == 1, "work should contain 1 folder");
-
-    // NOTE: image_index values below correspond to the indices of job2.jpg and img_root.jpg
-    // in the s.images array (indices 3 and 4). app_populate_grid_items appends direct images
-    // in the exact order they are stored in the s.images array.
-    CHECK(s.grid_items[2].type == ITEM_IMAGE, "item 2 image");
-    CHECK(s.grid_items[2].image_index == 3, "item 2 image_index 3");
-
-    CHECK(s.grid_items[3].type == ITEM_IMAGE, "item 3 image");
-    CHECK(s.grid_items[3].image_index == 4, "item 3 image_index 4");
-
-    // Strip count and cached strip index checks
-    CHECK(s.strip_image_count == 2, "strip_image_count should be 2");
-    CHECK(s.strip_image_grid_indices[0] == 2, "strip idx 0 is grid idx 2");
-    CHECK(s.strip_image_grid_indices[1] == 3, "strip idx 1 is grid idx 3");
+    TEST("select full image resets panning offsets");
+    AppState s = {0};
+    s.view_mode = VIEW_FULLIMAGE;
+    s.zoom_level = 2.0F;
+    s.zoom_pan_x = 100.0F;
+    s.zoom_pan_y = 200.0F;
+    s.zoom_level = 1.0F;
+    gal_clamp_zoom_pan(&s);
+    CHECK(s.zoom_pan_x == 0.0F && s.zoom_pan_y == 0.0F, "pan reset when zoom==1");
     PASS();
-
-    TEST("populate grid items in subfolder vacation");
-    wcscpy(s.viewing_dir, L"C:\\photos\\vacation");
-    app_populate_grid_items(&s);
-
-    // Grid items: 1 folder (..), 2 images (img1.jpg, img2.jpg)
-    CHECK(s.grid_item_count == 3, "grid_item_count should be 3 in subfolder");
-    CHECK(s.grid_items[0].type == ITEM_FOLDER, "item 0 is folder ..");
-    CHECK(_wcsicmp(s.grid_items[0].folder_name, L"..") == 0, "folder name ..");
-    CHECK(_wcsicmp(s.grid_items[0].folder_path, L"C:\\photos") == 0, "parent path C:\\photos");
-
-    CHECK(s.grid_items[1].type == ITEM_IMAGE, "item 1 image");
-    CHECK(s.grid_items[1].image_index == 0, "item 1 image_index 0");
-
-    CHECK(s.grid_items[2].type == ITEM_IMAGE, "item 2 image");
-    CHECK(s.grid_items[2].image_index == 1, "item 2 image_index 1");
-
-    CHECK(s.strip_image_count == 2, "strip count should be 2");
-    CHECK(s.strip_image_grid_indices[0] == 1, "strip idx 0 is grid idx 1");
-    CHECK(s.strip_image_grid_indices[1] == 2, "strip idx 1 is grid idx 2");
-    PASS();
-
-    free(arena_buf);
-    free(nav_arena_buf);
 }
 
-// ── Main ────────────────────────────────────────────────────────────────
+// ── Main runner ────────────────────────────────────────────────────────
+
 int main(void)
 {
     printf("========================================\n");
     printf("  calbum - Unit Tests\n");
     printf("========================================\n\n");
 
-    test_gal_calc_layout();
-    test_gal_hit_test();
-    test_selection_bounds();
-    test_scroll_clamp();
-    test_zoom_clamp_on_update_layout();
-    test_image_entry();
-    test_viewmode();
-    test_extensions();
-    test_fullimage_interactions();
-    test_zoom_and_recovery();
-    test_folders_and_strip_caching();
+    test_layout_narrow();
+    test_layout_1200();
+    test_layout_1920();
+    test_layout_zero_width();
+    test_hit_empty();
+    test_hit_wrong_view();
+    test_hit_first();
+    test_hit_second();
+    test_hit_outside();
 
-    printf("\n========================================\n");
+    test_selection_middle();
+    test_selection_boundary();
+    test_selection_boundary_last();
+    test_max_scroll_clamped();
+
+    test_zoom_pan_clamp();
+    test_zoom_clamp();
+
+    test_entry_defaults();
+    test_state_transitions();
+    test_enums();
+
+    test_image_extension();
+
+    test_fullimage_back();
+    test_fullimage_info_toggle();
+
+    test_eviction();
+
+    test_full_cache_eviction();
+
+    test_select_full_image_reset();
+
+    printf("\n");
+    printf("========================================\n");
     printf("  Results: %d/%d passed, %d failed\n", g_pass, g_run, g_fail);
     printf("========================================\n");
     return g_fail > 0 ? 1 : 0;

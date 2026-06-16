@@ -2,7 +2,7 @@
 // gallery_fullimage.c — Full-image viewer mode with zoom, pan, info overlay
 // =========================================================================
 #include "types.h"
-#include "ui.h"
+#include "../lib/ui/ui.h"
 #include <d2d1.h>
 #include <math.h>
 

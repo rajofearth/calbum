@@ -3,7 +3,7 @@
 //
 // Results are written into AppState's arena-backed flat array.
 // =========================================================================
-#include "types.h"
+#include "src/types.h"
 
 int fs_has_image_extension(const wchar_t *name)
 {

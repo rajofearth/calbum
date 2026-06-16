@@ -1,10 +1,15 @@
 // =========================================================================
-// ui.h — Reusable IMGUI component library for native D3D11/D2D widgets
+// ui.h — Reusable IMGUI widget component library
+//
+// Public API for the UI widgets module.  Include this header to use
+// panel, button, badge and text-drawing helpers in the D3D11/D2D render
+// pipeline.  All types (AppState, InstanceData, RenderToken) come from
+// the project-wide src/types.h header.
 // =========================================================================
-#ifndef UI_H
-#define UI_H
+#ifndef CALBUM_UI_H
+#define CALBUM_UI_H
 
-#include "types.h"
+#include "../../src/types.h"
 
 // Check if a point (mx, my) is inside rect (x, y, w, h)
 int ui_is_hovered(float x, float y, float w, float h, float mx, float my);

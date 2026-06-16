@@ -4,7 +4,7 @@
 // Uses ReadDirectoryChangesW with overlapped I/O on a background thread.
 // File changes are posted to the main thread via custom window message.
 // =========================================================================
-#include "types.h"
+#include "src/types.h"
 #include <stdlib.h>
 
 // Map NT file notify action to our FileChange type enum
