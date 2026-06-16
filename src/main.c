@@ -605,21 +605,7 @@ static void on_keydown(HWND hwnd, int vk)
                 if (image_select_offset(&g_state, 1))
                     InvalidateRect(hwnd, NULL, TRUE);
                 break;
-            case VK_HOME:
-                g_state.view.selected_index = 0;
-                g_state.view.scroll_target_y = 0.0F;
-                g_state.needs_redraw = 1;
-                InvalidateRect(hwnd, NULL, TRUE);
-                break;
-            case VK_END:
-            {
-                int limit = g_state.data.grid_items ? g_state.data.grid_item_count : g_state.data.count;
-                g_state.view.selected_index = limit - 1;
-                g_state.view.scroll_target_y = (float) gal_max_scroll(&g_state);
-                g_state.needs_redraw = 1;
-                InvalidateRect(hwnd, NULL, TRUE);
-                break;
-            }
+
             default:
                 break;
         }
@@ -652,48 +638,42 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
         return;
     }
 
-    // Check scrollbar
-    int ms = gal_max_scroll(&g_state);
-    if (ms > 0 && (float) x >= (float) g_state.window_width - (16.0F * g_state.ui.dpi_scale))
-    {
-        g_state.ui.is_dragging_scrollbar = 1;
-        g_state.ui.drag_start_y = (float) y;
-        g_state.ui.drag_start_scroll_y = g_state.view.scroll_current_y;
-        SetCapture(hwnd);
-        return;
-    }
+	// Check scrollbar (drag thumb or click track to page up/down)
+	int ms = gal_max_scroll(&g_state);
+	if (ms > 0 && (float) x >= (float) g_state.window_width - (16.0F * g_state.ui.dpi_scale))
+	{
+	    // Match renderer's scrollbar math (gal_render_scrollbar)
+	    float render_track_y = 8.0F * g_state.ui.dpi_scale;
+	    float render_track_h = (float) g_state.window_height - (16.0F * g_state.ui.dpi_scale);
+	    float render_thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * render_track_h;
+	    if (render_thumb_h < 24.0F * g_state.ui.dpi_scale)
+	        render_thumb_h = 24.0F * g_state.ui.dpi_scale;
+	    float render_thumb_y = render_track_y +
+	        ((g_state.view.scroll_current_y / (float) ms) * (render_track_h - render_thumb_h));
 
-    // Check scrollbar track click (click above/below thumb to page up/down)
-    float track_w = 16.0F * g_state.ui.dpi_scale;
-    float track_x = (float) g_state.window_width - track_w;
+	    if ((float) y >= render_thumb_y && (float) y <= render_thumb_y + render_thumb_h)
+	    {
+	        // Click on thumb → start dragging
+	        g_state.ui.is_dragging_scrollbar = 1;
+	        g_state.ui.drag_start_y = (float) y;
+	        g_state.ui.drag_start_scroll_y = g_state.view.scroll_current_y;
+	        SetCapture(hwnd);
+	        return;
+	    }
 
-    if (ms > 0 && (float) x >= track_x && (float) x < track_x + track_w)
-    {
-        float track_h =
-            (float) g_state.window_height - g_state.ui.layout.topbar_height - g_state.ui.layout.panel_padding;
-        float thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * track_h;
-        if (thumb_h < 24.0F * g_state.ui.dpi_scale)
-            thumb_h = 24.0F * g_state.ui.dpi_scale;
-
-        float scroll_ratio = (float) ms / (track_h - thumb_h);
-        float thumb_pos = g_state.view.scroll_current_y / scroll_ratio;
-        float thumb_y = g_state.ui.layout.topbar_height + g_state.ui.layout.panel_padding + thumb_pos;
-
-        if ((float) y < thumb_y)
-        {
-            // Click above thumb → page up
-            gal_scroll(&g_state, (float) (g_state.window_height * 0.8F));
-            InvalidateRect(hwnd, NULL, TRUE);
-            return;
-        }
-        if ((float) y > thumb_y + thumb_h)
-        {
-            // Click below thumb → page down
-            gal_scroll(&g_state, (float) (-g_state.window_height * 0.8F));
-            InvalidateRect(hwnd, NULL, TRUE);
-            return;
-        }
-    }
+	    // Click on track → jump thumb to click position (instant)
+	    float scrollable_pixels = render_track_h - render_thumb_h;
+	    float ratio = (scrollable_pixels > 0.0F) ? ((float) y - render_track_y) / scrollable_pixels : 0.0F;
+	    if (ratio < 0.0F)
+	        ratio = 0.0F;
+	    if (ratio > 1.0F)
+	        ratio = 1.0F;
+	    float new_y = ratio * (float) ms;
+	    g_state.view.scroll_current_y = new_y;
+	    g_state.view.scroll_target_y = new_y;
+	    InvalidateRect(hwnd, NULL, TRUE);
+	    return;
+	}
 
     int idx;
     if (gal_hit_test(&g_state, x, y, &idx))
@@ -784,8 +764,8 @@ static void on_mousewheel(HWND hwnd, int delta)
 {
     if (g_state.view.view_mode == VIEW_GALLERY)
     {
-        int snap = delta / 120 * 60;
-        gal_scroll(&g_state, (float) snap);
+    	    float scroll_amount = (float) delta * 1.5F;
+    	    gal_scroll(&g_state, scroll_amount);
         InvalidateRect(hwnd, NULL, TRUE);
     }
     else
