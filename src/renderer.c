@@ -629,11 +629,14 @@ void r_draw_text_aligned(AppState *s, const wchar_t *text,
     if (wcslen(text) == 1 && s->dwrite_format_icons == format)
     {
         IDWriteTextLayout *layout = NULL;
-        if (text[0] == 0xE72B) {
+        if (text[0] == 0xE72B)
+        {
             layout = s->layout_back;
-        } else if (text[0] == 0xE946) {
+        }
+        else if (text[0] == 0xE946)
+        {
             layout = s->layout_info;
-}
+        }
 
         if (layout)
         {
@@ -675,83 +678,41 @@ void r_shutdown(AppState *s)
 {
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        if (s->full_slots[i].srv)
-        {
-            s->full_slots[i].srv->lpVtbl->Release(s->full_slots[i].srv);
-            s->full_slots[i].srv = NULL;
-        }
-        if (s->full_slots[i].texture)
-        {
-            s->full_slots[i].texture->lpVtbl->Release(s->full_slots[i].texture);
-            s->full_slots[i].texture = NULL;
-        }
+        SAFE_RELEASE(s->full_slots[i].srv);
+        SAFE_RELEASE(s->full_slots[i].texture);
     }
     s->active_full_srv = NULL;
-    if (s->tex_pool.texture_array_srv)
-        s->tex_pool.texture_array_srv->lpVtbl->Release(s->tex_pool.texture_array_srv);
-    if (s->tex_pool.texture_array)
-        s->tex_pool.texture_array->lpVtbl->Release(s->tex_pool.texture_array);
-    if (s->sampler)
-        s->sampler->lpVtbl->Release(s->sampler);
-    if (s->blend_state)
-        s->blend_state->lpVtbl->Release(s->blend_state);
-    if (s->instance_buffer)
-        s->instance_buffer->lpVtbl->Release(s->instance_buffer);
-    if (s->constant_buffer)
-        s->constant_buffer->lpVtbl->Release(s->constant_buffer);
-    if (s->theme_buffer)
-        s->theme_buffer->lpVtbl->Release(s->theme_buffer);
-    if (s->input_layout)
-        s->input_layout->lpVtbl->Release(s->input_layout);
-    if (s->vs)
-        s->vs->lpVtbl->Release(s->vs);
-    if (s->ps)
-        s->ps->lpVtbl->Release(s->ps);
-    if (s->rtv)
-        s->rtv->lpVtbl->Release(s->rtv);
-    if (s->swap_chain)
-        s->swap_chain->lpVtbl->Release(s->swap_chain);
-    if (s->d3d_context)
-        s->d3d_context->lpVtbl->Release(s->d3d_context);
-    if (s->layout_back)
-        ((IUnknown *) s->layout_back)->lpVtbl->Release((IUnknown *) s->layout_back);
-    if (s->layout_info)
-        ((IUnknown *) s->layout_info)->lpVtbl->Release((IUnknown *) s->layout_info);
-
-    if (s->d2d_brush)
-        ((IUnknown *) s->d2d_brush)->lpVtbl->Release((IUnknown *) s->d2d_brush);
-    if (s->dwrite_format_regular)
-        ((IUnknown *) s->dwrite_format_regular)->lpVtbl->Release((IUnknown *) s->dwrite_format_regular);
-    if (s->dwrite_format_semibold)
-        ((IUnknown *) s->dwrite_format_semibold)->lpVtbl->Release((IUnknown *) s->dwrite_format_semibold);
-    if (s->dwrite_format_small)
-        ((IUnknown *) s->dwrite_format_small)->lpVtbl->Release((IUnknown *) s->dwrite_format_small);
-    if (s->dwrite_format_mono)
-        ((IUnknown *) s->dwrite_format_mono)->lpVtbl->Release((IUnknown *) s->dwrite_format_mono);
-    if (s->dwrite_format_mono_small)
-        ((IUnknown *) s->dwrite_format_mono_small)->lpVtbl->Release((IUnknown *) s->dwrite_format_mono_small);
-    if (s->dwrite_format_small_semibold)
-        ((IUnknown *) s->dwrite_format_small_semibold)->lpVtbl->Release((IUnknown *) s->dwrite_format_small_semibold);
-    if (s->dwrite_format_icons)
-        ((IUnknown *) s->dwrite_format_icons)->lpVtbl->Release((IUnknown *) s->dwrite_format_icons);
-    if (s->dwrite_format_icons_large)
-        ((IUnknown *) s->dwrite_format_icons_large)->lpVtbl->Release((IUnknown *) s->dwrite_format_icons_large);
-    if (s->dwrite_factory)
-        ((IUnknown *) s->dwrite_factory)->lpVtbl->Release((IUnknown *) s->dwrite_factory);
-    if (s->d2d_rtv)
-        ((IUnknown *) s->d2d_rtv)->lpVtbl->Release((IUnknown *) s->d2d_rtv);
-    if (s->d2d_factory)
-        ((IUnknown *) s->d2d_factory)->lpVtbl->Release((IUnknown *) s->d2d_factory);
-
-    if (s->blur_tex)
-        s->blur_tex->lpVtbl->Release(s->blur_tex);
-    if (s->blur_srv)
-        s->blur_srv->lpVtbl->Release(s->blur_srv);
-    if (s->back_buffer)
-        s->back_buffer->lpVtbl->Release(s->back_buffer);
-
-    if (s->d3d_device)
-        s->d3d_device->lpVtbl->Release(s->d3d_device);
+    SAFE_RELEASE(s->tex_pool.texture_array_srv);
+    SAFE_RELEASE(s->tex_pool.texture_array);
+    SAFE_RELEASE(s->sampler);
+    SAFE_RELEASE(s->blend_state);
+    SAFE_RELEASE(s->instance_buffer);
+    SAFE_RELEASE(s->constant_buffer);
+    SAFE_RELEASE(s->theme_buffer);
+    SAFE_RELEASE(s->input_layout);
+    SAFE_RELEASE(s->vs);
+    SAFE_RELEASE(s->ps);
+    SAFE_RELEASE(s->rtv);
+    SAFE_RELEASE(s->swap_chain);
+    SAFE_RELEASE(s->d3d_context);
+    SAFE_RELEASE(s->layout_back);
+    SAFE_RELEASE(s->layout_info);
+    SAFE_RELEASE(s->d2d_brush);
+    SAFE_RELEASE(s->dwrite_format_regular);
+    SAFE_RELEASE(s->dwrite_format_semibold);
+    SAFE_RELEASE(s->dwrite_format_small);
+    SAFE_RELEASE(s->dwrite_format_mono);
+    SAFE_RELEASE(s->dwrite_format_mono_small);
+    SAFE_RELEASE(s->dwrite_format_small_semibold);
+    SAFE_RELEASE(s->dwrite_format_icons);
+    SAFE_RELEASE(s->dwrite_format_icons_large);
+    SAFE_RELEASE(s->dwrite_factory);
+    SAFE_RELEASE(s->d2d_rtv);
+    SAFE_RELEASE(s->d2d_factory);
+    SAFE_RELEASE(s->blur_tex);
+    SAFE_RELEASE(s->blur_srv);
+    SAFE_RELEASE(s->back_buffer);
+    SAFE_RELEASE(s->d3d_device);
 }
 
 FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path)
@@ -803,72 +764,9 @@ int r_alloc_full_image_slot(AppState *s)
         }
     }
 
-    int start_strip_idx = 0;
-    int end_strip_idx = -1;
-    if (s->images && s->strip_image_count > 0)
-    {
-        float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
-        float main_w = (float) s->window_width - (40.0F * dpi);
-        float avail_w = main_w - (100.0F * dpi);
-        int thumb_w = (int) (80 * dpi);
-        int thumb_pad = (int) (10 * dpi);
-        int col_w = thumb_w + thumb_pad;
-
-        int num_strip_thumbs = (int) (avail_w / (float) col_w);
-        if (num_strip_thumbs < 1)
-            num_strip_thumbs = 1;
-
-        // Find active image in strip
-        int active_img_idx_in_strip = -1;
-        for (int i = 0; i < s->strip_image_count; i++)
-        {
-            if (s->strip_image_grid_indices[i] == s->selected_index)
-            {
-                active_img_idx_in_strip = i;
-                break;
-            }
-        }
-
-        if (active_img_idx_in_strip != -1)
-        {
-            int half_n = num_strip_thumbs / 2;
-            start_strip_idx = active_img_idx_in_strip - half_n;
-            if (start_strip_idx < 0)
-                start_strip_idx = 0;
-            end_strip_idx = start_strip_idx + num_strip_thumbs - 1;
-            if (end_strip_idx >= s->strip_image_count)
-            {
-                end_strip_idx = s->strip_image_count - 1;
-                start_strip_idx = end_strip_idx - num_strip_thumbs + 1;
-                if (start_strip_idx < 0)
-                    start_strip_idx = 0;
-            }
-        }
-    }
-
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        int in_strip = 0;
-        if (s->images && s->grid_items && s->strip_image_count > 0 && end_strip_idx >= start_strip_idx)
-        {
-            for (int k = start_strip_idx; k <= end_strip_idx; k++)
-            {
-                int grid_idx = s->strip_image_grid_indices[k];
-                if (grid_idx >= 0 && grid_idx < s->grid_item_count)
-                {
-                    int img_idx = s->grid_items[grid_idx].image_index;
-                    if (img_idx >= 0 && img_idx < s->count)
-                    {
-                        if (_wcsicmp(s->full_slots[i].path, s->images[img_idx].path) == 0)
-                        {
-                            in_strip = 1;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (!in_strip)
+        if (!fiv_is_in_strip(s, s->full_slots[i].path))
         {
             r_free_full_image_slot(s, i);
             return i;

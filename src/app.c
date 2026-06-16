@@ -59,7 +59,7 @@ void app_shutdown(AppState *s)
     rb_destroy(&s->work_queue);
 }
 
-void get_pictures_folder(wchar_t *buf, int len)
+void app_get_pictures_folder(wchar_t *buf, int len)
 {
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_MYPICTURES, NULL, SHGFP_TYPE_CURRENT, buf)))
         return;
@@ -95,7 +95,11 @@ void app_load_folder(AppState *s, const wchar_t *path)
     {
         if (msg.message == WM_CALBUM_LOAD_COMPLETE)
         {
-            union { LPARAM l; LoadResult *p; } u = { .l = msg.lParam };
+            union
+            {
+                LPARAM l;
+                LoadResult *p;
+            } u = {.l = msg.lParam};
             LoadResult *result = u.p;
             if (result && result->bc1_data)
                 il_free_bc1_data(result->bc1_data);
@@ -103,13 +107,21 @@ void app_load_folder(AppState *s, const wchar_t *path)
         }
         else if (msg.message == WM_CALBUM_FILE_CHANGE)
         {
-            union { LPARAM l; FileChange *p; } u = { .l = msg.lParam };
+            union
+            {
+                LPARAM l;
+                FileChange *p;
+            } u = {.l = msg.lParam};
             FileChange *fc = u.p;
             free(fc);
         }
         else if (msg.message == WM_CALBUM_FULL_LOAD_COMPLETE)
         {
-            union { LPARAM l; FullLoadResult *p; } u = { .l = msg.lParam };
+            union
+            {
+                LPARAM l;
+                FullLoadResult *p;
+            } u = {.l = msg.lParam};
             FullLoadResult *result = u.p;
             if (result)
             {
@@ -119,7 +131,11 @@ void app_load_folder(AppState *s, const wchar_t *path)
         }
         else if (msg.message == WM_CALBUM_SCAN_PROGRESS)
         {
-            union { LPARAM l; ScanBatch *p; } u = { .l = msg.lParam };
+            union
+            {
+                LPARAM l;
+                ScanBatch *p;
+            } u = {.l = msg.lParam};
             ScanBatch *batch = u.p;
             free(batch);
         }
@@ -232,7 +248,7 @@ ImageEntry *app_append_image_entry(AppState *s, const wchar_t *path, const wchar
     return e;
 }
 
-void get_parent_dir(const wchar_t *path, wchar_t *out, int max_len)
+void app_get_parent_dir(const wchar_t *path, wchar_t *out, int max_len)
 {
     wcsncpy(out, path, max_len - 1)[max_len - 1] = L'\0';
     size_t len = wcslen(out);
@@ -350,7 +366,7 @@ void app_populate_grid_items(AppState *s)
     if (is_sub_dir)
     {
         wchar_t parent[MAX_PATH_LEN];
-        get_parent_dir(s->viewing_dir, parent, MAX_PATH_LEN);
+        app_get_parent_dir(s->viewing_dir, parent, MAX_PATH_LEN);
 
         GridItem *item = &s->grid_items[s->grid_item_count++];
         item->type = ITEM_FOLDER;

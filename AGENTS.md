@@ -19,4 +19,4 @@ Direct3D 11 / Direct2D.  The cache directory is `%LOCALAPPDATA%\calbum\Cache`.
 - Reference modules by prefix (e.g., "renderer", "asset_worker", "release workflow")
 
 ### Quality Checklist
-- Run format and lint checks after each change or before the final commit to enforce the code quality standards defined in the project's README.
+- Run format, tests and lint checks after each change or before the final commit to enforce the code quality standards defined in the project's README.

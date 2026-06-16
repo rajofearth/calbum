@@ -2,7 +2,7 @@
 #include "layout.h"
 #include <math.h>
 
-void gal_calc_layout(AppState *s, GridLayout *out)
+void gal_calc_layout(const AppState *s, GridLayout *out)
 {
     float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
     float thumb_size = 160.0F * dpi;
@@ -37,7 +37,7 @@ void gal_calc_layout(AppState *s, GridLayout *out)
         out->last_visible = s->grid_item_count;
 }
 
-int gal_max_scroll(AppState *s)
+int gal_max_scroll(const AppState *s)
 {
     GridLayout lay;
     gal_calc_layout(s, &lay);
@@ -54,7 +54,7 @@ int gal_max_scroll(AppState *s)
     return max_s < 0 ? 0 : max_s;
 }
 
-int gal_hit_test(AppState *s, int x, int y, int *out_index)
+int gal_hit_test(const AppState *s, int x, int y, int *out_index)
 {
     if (s->view_mode != VIEW_GALLERY || s->grid_item_count == 0)
         return 0;

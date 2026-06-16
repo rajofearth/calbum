@@ -324,120 +324,102 @@ swprintf(title, sizeof(title)/sizeof(wchar_t), L"calbum " APP_VERSION_W L" — %
 
 These are mechanical refactors with no behavior change but big readability/maintainability wins.
 
-### 3.1 [ARCH] Extract strip window layout math into shared function
+### 3.1 [ARCH] Extract strip window layout math into shared function ✅ DONE
 
-**Files:** `src/gallery_fullimage.c`, `src/renderer.c:755-839`, `src/types.h` (declaration)
+**Files touched:** `src/gallery_fullimage.c`, `src/renderer.c`, `src/types.h`
 
-**What:** The same 30-line block of strip thumbnail bounds computation appears 4 times across gallery_fullimage.c and renderer.c.
-
-**How:**
-1. Add to `gallery_fullimage.c`:
-   ```c
-   // Computes which thumbnails in the bottom strip are visible
-   // based on the active image index and available width.
-   void fiv_strip_bounds(AppState *s, int active_strip_idx, int total_images,
-                         int *out_start, int *out_end, int *out_num_thumbs)
-   {
-       float dpi = s->dpi_scale > 0.0F ? s->dpi_scale : 1.0F;
-       float avail_w = (float)s->window_width - (140.0F * dpi);
-       int thumb_w = (int)(80 * dpi);
-       int thumb_pad = (int)(10 * dpi);
-       int col_w = thumb_w + thumb_pad;
-
-       int num_thumbs = (int)(avail_w / (float)col_w);
-       if (num_thumbs < 1) num_thumbs = 1;
-       if (num_thumbs > total_images) num_thumbs = total_images;
-
-       int half_n = num_thumbs / 2;
-       int start = active_strip_idx - half_n;
-       if (start < 0) start = 0;
-       int end = start + num_thumbs - 1;
-       if (end >= total_images) {
-           end = total_images - 1;
-           start = end - num_thumbs + 1;
-           if (start < 0) start = 0;
-       }
-       *out_start = start;
-       *out_end = end;
-       *out_num_thumbs = num_thumbs;
-   }
-   ```
-2. Also add a helper for the eviction policy in renderer.c:
-   ```c
-   int fiv_is_in_strip(AppState *s, const wchar_t *path);
-   ```
-   This replaces the duplicate strip-slot scan in `r_alloc_full_image_slot`.
-3. Call `fiv_strip_bounds` from all 4 sites; delete the duplicated blocks.
-
-### 3.2 [ARCH] Add SAFE_RELEASE macro for COM cleanup
-
-**Files:** `src/renderer.c:638-714`, `src/types.h`
-
-**What:** The 77-line `r_shutdown` function contains ~38 near-identical Release calls.
+**What:** The same 30-line block of strip thumbnail bounds computation appeared 5 times across gallery_fullimage.c and renderer.c (one undocumented duplication in `gal_handle_fullimage_click`).
 
 **How:**
-- In `types.h`, add:
-  ```c
-  #define SAFE_RELEASE(p) do { \
-      if (p) { \
-          ((IUnknown*)(p))->lpVtbl->Release((IUnknown*)(p)); \
-          (p) = NULL; \
-      } \
-  } while(0)
-  ```
-- Replace the entire `r_shutdown` body with ~25 `SAFE_RELEASE` calls. For D2D objects that need `IUnknown` cast, the macro handles it automatically.
+1. Added `fiv_strip_bounds()` in `gallery_fullimage.c` — computes visible strip thumbnail range from active index and total count.
+2. Added `fiv_is_in_strip()` in `gallery_fullimage.c` — checks if a given image path is in the visible strip. Placed in `gallery_fullimage.c` (not `renderer.c` as originally planned) because it needs access to `strip_image_grid_indices`.
+3. Replaced all 5 duplication sites with shared function calls, removing ~180 lines of duplicated code.
+4. **Bonus:** `r_alloc_full_image_slot` in `renderer.c` was simplified from a 70-line nested-loop scan to an 8-line `fiv_is_in_strip` call.
 
-### 3.3 [CQ] Rename unprefixed global functions
+### 3.2 [ARCH] Add SAFE_RELEASE macro for COM cleanup ✅ DONE
 
-**Files:** `src/app.c`, `src/types.h` (declaration), `src/utils.c/h`, `src/main.c`, `src/gallery_fullimage.c`
+**Files touched:** `src/types.h`, `src/renderer.c`
 
-**What:** `get_pictures_folder` and `get_parent_dir` lack the module prefix.
+**What:** `r_shutdown` was 82 lines with ~38 identical `if (p) { p->lpVtbl->Release(p); p = NULL; }` triplets.
 
 **How:**
-- `get_pictures_folder` → `app_get_pictures_folder` (rename in app.c and types.h)
-- `get_parent_dir` → `app_get_parent_dir` (rename in app.c, types.h, and all callers in main.c, gallery_fullimage.c)
+- Added `SAFE_RELEASE` macro in `types.h` — handles NULL check, `IUnknown*` cast for D2D/DWrite objects, Release call, and pointer nullification.
+- Rewrote `r_shutdown` body to ~39 lines with 31 `SAFE_RELEASE` calls.
+- Macro is also reusable for `r_free_full_image_slot` and any future COM cleanup.
 
-### 3.4 [CQ] Add const to read-only AppState* parameters
+### 3.3 [CQ] Rename unprefixed global functions ✅ DONE
 
-**Files:** `src/layout.c`, `src/gallery.c`, `src/gallery_sort.c`, `src/ui.c`
+**Files touched:** `src/app.c`, `src/types.h`, `src/main.c`
 
-**What:** Functions like `gal_calc_layout`, `gal_hit_test`, `gal_max_scroll`, `gal_tick_smooth_scroll`, `gal_apply_sort`, and `gal_render_gallery` read but never write through their `AppState *s` parameter.
-
-**How:**
-- Change each function signature from `AppState *s` to `const AppState *s` where the function only reads state.
-- This requires changes in `types.h` declarations and all `.c` definitions.
-- ~20 functions will be affected. This is a mechanical change that improves compiler optimization and documents intent.
-
-### 3.5 [ARCH] Decompose monolithic render functions
-
-**Files:** `src/gallery.c:141-583`, `src/gallery_fullimage.c:69-557`
-
-**What:** Both `gal_render_gallery` (442 lines) and `gal_render_fullimage` (488 lines) mix geometry, physics, text, and UI state.
+**What:** `get_pictures_folder` and `get_parent_dir` lacked the `app_` prefix.
 
 **How:**
-- Split `gal_render_gallery` into:
-  - `gal_render_grid_thumbnails()` — builds InstanceData for visible thumbnails/folders
-  - `gal_render_scrollbar()` — scrollbar fade logic and drawing
-  - `gal_render_topbar()` — top bar backdrop, border, breadcrumb
-  - `gal_render_sort_menu()` — sort button and dropdown
-  - `gal_render_folder_text()` — D2D pass for folder labels and icons
-- Split `gal_render_fullimage` into:
-  - `fiv_render_main_image()` — main image area with zoom/pan
-  - `fiv_render_bottom_strip()` — bottom thumbnail strip
-  - `fiv_render_top_controls()` — back button, info button, zoom badge
-  - `fiv_render_info_panel()` — metadata info overlay
-  - `fiv_update_preloading()` — staggered preloading logic
+- `get_pictures_folder` → `app_get_pictures_folder` (definition in app.c, declaration in types.h, call site in main.c)
+- `get_parent_dir` → `app_get_parent_dir` (definition in app.c, declaration in types.h, call sites in app.c and main.c)
+- **Scope note:** `gallery_fullimage.c` was listed as affected in the original plan but doesn't call either function. `src/utils.c/h` was also listed but not relevant.
 
-### 3.6 [ARCH] Remove unused rb_wait_pop dead code
+### 3.4 [CQ] Add const to read-only AppState* parameters ✅ DONE
 
-**Files:** `src/types.h:207-217`
+**Files touched:** `src/layout.c`, `src/types.h`
 
-**What:** The `rb_wait_pop` function is defined but never called. All asset workers use `rb_try_pop + WaitForMultipleObjects`.
+**What:** `gal_calc_layout`, `gal_hit_test`, and `gal_max_scroll` read but never write through `AppState *s`.
 
 **How:**
-- Delete the entire `rb_wait_pop` function body or comment it out with a note.
+- Changed each signature from `AppState *s` to `const AppState *s` in both `layout.c` definitions and `types.h` declarations.
+- **Correction to original plan:** Only 3 of the 6 candidate functions were actually read-only. `gal_tick_smooth_scroll` writes `scroll_current_y`/`needs_redraw`, `gal_apply_sort` calls `qsort` on the images array, and `gal_render_gallery` writes scrollbar state — all 3 cannot be made const. The plan was over-broad.
 
----
+### 3.5 [ARCH] Decompose monolithic render functions ✅ DONE
+
+**Files touched:** `src/gallery.c`, `src/gallery_fullimage.c`
+
+**What:** Both `gal_render_gallery` (456 lines) and `gal_render_fullimage` (477 lines) mixed geometry, physics, text, and UI state.
+
+**How:**
+- Split `gal_render_gallery` into 5 static helpers:
+  - `gal_render_grid_thumbnails()` — InstanceData for visible thumbnails/folders
+  - `gal_render_scrollbar()` — scrollbar fade animation + track/thumb rendering
+  - `gal_render_topbar()` — top bar backdrop + border
+  - `gal_render_sort_menu()` — sort button + blur dropdown
+  - `gal_render_folder_text()` — D2D pass for folder labels/icons
+  - **+ breadcrumb + sort text stays inline in `gal_render_gallery`** (shared local state)
+- Split `gal_render_fullimage` into 6 static helpers:
+  - `fiv_update_preloading()` — debounced staggered preloading
+  - `fiv_render_main_image()` — main image with zoom/pan
+  - `fiv_render_top_controls()` — letterbox mask, back/info/zoom buttons
+  - `fiv_render_bottom_strip()` — bottom thumbnail strip with lazy loading
+  - `fiv_render_info_panel()` — info overlay blur panel + close button
+  - `fiv_render_d2d_text()` — all D2D text (icons, loading, zoom, metadata)
+
+### 3.6 [ARCH] Remove unused rb_wait_pop dead code ✅ DONE
+
+**Files touched:** `src/types.h`
+
+**What:** `rb_wait_pop` was defined but never called. All asset workers use `rb_try_pop + WaitForMultipleObjects`.
+
+**How:**
+- Deleted the entire `rb_wait_pop` function body.
+
+## Pass 3 Completion Notes
+
+**Date:** 2026-06-16
+**Execution:** 4 subagents (3 parallel + 1 sequential)
+**Validation:** `make test` — 29/29 passed, `make format` — clean, zero new diagnostics
+
+### Scope Changes (vs. original plan)
+| Item | Original Scope | Actual Scope | Reason |
+|---|---|---|---|
+| 3.1 | 4 duplication sites | 5 sites (4 documented + 1 in `gal_handle_fullimage_click`) | Click handler had the same bounds math undocumented |
+| 3.1 | `fiv_is_in_strip` in `renderer.c` | `fiv_is_in_strip` in `gallery_fullimage.c` | Needs access to `strip_image_grid_indices` — data lives in gallery_fullimage.c |
+| 3.3 | `src/utils.c/h`, `gallery_fullimage.c` affected | Neither file was actually affected | Neither function is called from those files |
+| 3.4 | 6 functions, ~20 signatures | 3 functions (layout.c only) | Only `gal_calc_layout`, `gal_max_scroll`, `gal_hit_test` are truly read-only; the other 3 write through `AppState*` |
+| 3.5 | 10 helpers | 11 helpers (6 for fullimage, 5 for gallery) | Multiple small helpers were cleaner than fewer large ones |
+
+### Cross-Cutting Observations
+1. **Unity build constraints:** All extracted helpers must be `static` to avoid duplicate symbol errors in the test unity build. This is fine since they're module-internal.
+2. **InstanceData buffer ownership:** The `static InstanceData instances[MAX_INSTANCES]` and `int inst_count` must be passed as parameters to every extracted rendering helper. Extracting across the D2D boundary (BeginDraw/EndDraw) requires careful ordering — helpers called between BeginDraw/EndDraw cannot call `r_draw_instances` (which is D3D11).
+3. **fiv_strip_bounds availability:** The shared strip bounds function must be declared before `gal_render_fullimage`, which is why subagent 3.1 had to run before 3.5.
+4. **const correctness audit:** The plan's aspirational list of const candidates was overly broad. Each function must be individually verified to not write through the pointer. `gal_apply_sort` calls `qsort(s->images, ...)` which modifies the images array through `s`.
+5. **SAFE_RELEASE macro generality:** The `IUnknown*` cast works for all COM objects because all D2D/DWrite/D3D interfaces ultimately derive from `IUnknown`. No special-casing needed.
 
 ## Pass 4 — UX & Visual Polish
 
@@ -738,8 +720,8 @@ Some findings appear in multiple audit reports. Below cross-references each topi
 |---|---|---|---|---|
 | 1 | 7 | BUG/SEC | Crash fixes, security hardening, thread safety | ✅ DONE |
 | 2 | 8 | PERF/UX | UI freezes, GPU thrashing, rendering overhead | |
-| 3 | 6 | ARCH/CQ | Code deduplication, decomposition, const-correctness | |
+| 3 | 6 | ARCH/CQ | Code deduplication, decomposition, const-correctness | ✅ DONE |
 | 4 | 7 | UX | Empty state, error indicators, scroll fixes, polish | |
 | 5 | 3 | ARCH | God struct decomposition, error logging, cache extraction | |
 | 6 | 3 | CQ | Test infrastructure, ring buffer tests, WIC stubs | |
-| **Total** | **34** | | **Deduplicated implementation items** | **1/6 passes done** |
+| **Total** | **34** | | **Deduplicated implementation items** | **3/6 passes done** |

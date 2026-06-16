@@ -139,44 +139,19 @@ static void format_folder_contents(int image_count, int folder_count, wchar_t *b
     }
 }
 
-void gal_render_gallery(HDC hdc, AppState *s)
+// ── Gallery render helpers ────────────────────────────────────────────────
+
+// Builds InstanceData for visible thumbnails/folders in the grid
+static void gal_render_grid_thumbnails(AppState *s, InstanceData *instances, int *inst_count, const GridLayout *lay,
+                                       POINT pt, float thumb_size)
 {
-    (void) hdc; // Unused parameter
-    r_clear_theme(s);
-
-    int total_items = s->grid_items ? s->grid_item_count : s->count;
-    if (total_items == 0)
+    for (int i = lay->first_visible; i < lay->last_visible; i++)
     {
-        if (s->scanning)
-        {
-            float muted[4] = {0.663F, 0.686F, 0.737F, 1.0F};
-            s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
-            r_draw_text_aligned(s, L"Scanning\u2026", 0, 0, (float) s->window_width, (float) s->window_height,
-                                ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format, muted);
-            s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
-        }
-        r_present(s);
-        return;
-    }
-
-    GridLayout lay;
-    gal_calc_layout(s, &lay);
-
-    static InstanceData instances[MAX_INSTANCES];
-    int inst_count = 0;
-
-    POINT pt;
-    GetCursorPos(&pt);
-    ScreenToClient(s->hwnd, &pt);
-
-    float thumb_size = 160.0F * s->dpi_scale;
-
-    for (int i = lay.first_visible; i < lay.last_visible; i++)
-    {
-        int row = i / lay.cols;
-        int col = i % lay.cols;
-        float x = (float) (lay.left_margin + (col * lay.pad));
-        float y = s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay.pad) - (float) lay.scroll_int;
+        int row = i / lay->cols;
+        int col = i % lay->cols;
+        float x = (float) (lay->left_margin + (col * lay->pad));
+        float y =
+            s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay->pad) - (float) lay->scroll_int;
 
         if (y + thumb_size < 0 || y > (float) s->window_height)
             continue;
@@ -209,26 +184,26 @@ void gal_render_gallery(HDC hdc, AppState *s)
             }
 
             // Draw border behind
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x - (1.0F * s->dpi_scale);
-            instances[inst_count].y = y - (1.0F * s->dpi_scale);
-            instances[inst_count].w = thumb_size + (2.0F * s->dpi_scale);
-            instances[inst_count].h = thumb_size + (2.0F * s->dpi_scale);
-            instances[inst_count].tex_index = TOKEN_BORDER;
-            instances[inst_count].opacity = border_opacity;
-            instances[inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
-            inst_count++;
+            instances[*inst_count] = (InstanceData){0};
+            instances[*inst_count].x = x - (1.0F * s->dpi_scale);
+            instances[*inst_count].y = y - (1.0F * s->dpi_scale);
+            instances[*inst_count].w = thumb_size + (2.0F * s->dpi_scale);
+            instances[*inst_count].h = thumb_size + (2.0F * s->dpi_scale);
+            instances[*inst_count].tex_index = TOKEN_BORDER;
+            instances[*inst_count].opacity = border_opacity;
+            instances[*inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
+            (*inst_count)++;
 
             // Draw main folder backplate card on top
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x;
-            instances[inst_count].y = y;
-            instances[inst_count].w = thumb_size;
-            instances[inst_count].h = thumb_size;
-            instances[inst_count].tex_index = TOKEN_PANEL;
-            instances[inst_count].opacity = (hovered || s->selected_index == i) ? 1.0F : 0.75F;
-            instances[inst_count].corner_radius = s->layout.thumb_radius;
-            inst_count++;
+            instances[*inst_count] = (InstanceData){0};
+            instances[*inst_count].x = x;
+            instances[*inst_count].y = y;
+            instances[*inst_count].w = thumb_size;
+            instances[*inst_count].h = thumb_size;
+            instances[*inst_count].tex_index = TOKEN_PANEL;
+            instances[*inst_count].opacity = (hovered || s->selected_index == i) ? 1.0F : 0.75F;
+            instances[*inst_count].corner_radius = s->layout.thumb_radius;
+            (*inst_count)++;
         }
         else
         {
@@ -242,55 +217,57 @@ void gal_render_gallery(HDC hdc, AppState *s)
                 }
 
                 // Draw border behind
-                instances[inst_count] = (InstanceData){0};
-                instances[inst_count].x = x - (1.0F * s->dpi_scale);
-                instances[inst_count].y = y - (1.0F * s->dpi_scale);
-                instances[inst_count].w = thumb_size + (2.0F * s->dpi_scale);
-                instances[inst_count].h = thumb_size + (2.0F * s->dpi_scale);
-                instances[inst_count].tex_index = TOKEN_BORDER;
-                instances[inst_count].opacity = border_opacity;
-                instances[inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
-                inst_count++;
+                instances[*inst_count] = (InstanceData){0};
+                instances[*inst_count].x = x - (1.0F * s->dpi_scale);
+                instances[*inst_count].y = y - (1.0F * s->dpi_scale);
+                instances[*inst_count].w = thumb_size + (2.0F * s->dpi_scale);
+                instances[*inst_count].h = thumb_size + (2.0F * s->dpi_scale);
+                instances[*inst_count].tex_index = TOKEN_BORDER;
+                instances[*inst_count].opacity = border_opacity;
+                instances[*inst_count].corner_radius = s->layout.thumb_radius + (1.0F * s->dpi_scale);
+                (*inst_count)++;
 
-                instances[inst_count] = (InstanceData){0};
-                instances[inst_count].x = x;
-                instances[inst_count].y = y;
-                instances[inst_count].w = thumb_size;
-                instances[inst_count].h = thumb_size;
-                instances[inst_count].tex_index = (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU) ?
-                                                      s->images[img_idx].texture_slot :
-                                                      TOKEN_DEFAULT;
-                instances[inst_count].opacity = 1.0F;
-                instances[inst_count].corner_radius = s->layout.thumb_radius;
+                instances[*inst_count] = (InstanceData){0};
+                instances[*inst_count].x = x;
+                instances[*inst_count].y = y;
+                instances[*inst_count].w = thumb_size;
+                instances[*inst_count].h = thumb_size;
+                instances[*inst_count].tex_index = (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU) ?
+                                                       s->images[img_idx].texture_slot :
+                                                       TOKEN_DEFAULT;
+                instances[*inst_count].opacity = 1.0F;
+                instances[*inst_count].corner_radius = s->layout.thumb_radius;
 
                 if (s->images[img_idx].state == IMG_STATE_RESIDENT_GPU && s->images[img_idx].texture_slot != -1)
                 {
                     s->tex_pool.last_used[s->images[img_idx].texture_slot] = s->tex_pool.frame_counter;
                 }
-                inst_count++;
+                (*inst_count)++;
             }
         }
 
         // Selection Outline: draw a glowing accent color outline on top of the item
         if (s->selected_index == i)
         {
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = x;
-            instances[inst_count].y = y;
-            instances[inst_count].w = thumb_size;
-            instances[inst_count].h = thumb_size;
-            instances[inst_count].tex_index = TOKEN_SELECTION_OUTLINE; // Accent outline token
-            instances[inst_count].opacity = 1.0F;
-            instances[inst_count].corner_radius = s->layout.thumb_radius;
-            inst_count++;
+            instances[*inst_count] = (InstanceData){0};
+            instances[*inst_count].x = x;
+            instances[*inst_count].y = y;
+            instances[*inst_count].w = thumb_size;
+            instances[*inst_count].h = thumb_size;
+            instances[*inst_count].tex_index = TOKEN_SELECTION_OUTLINE; // Accent outline token
+            instances[*inst_count].opacity = 1.0F;
+            instances[*inst_count].corner_radius = s->layout.thumb_radius;
+            (*inst_count)++;
         }
 
-        if (inst_count >= MAX_INSTANCES - 16)
+        if (*inst_count >= MAX_INSTANCES - 16)
             break; // Leave room for scrollbar, topbar and buttons
     }
+}
 
-    // Scrollbar Update & Draw
-    int ms = gal_max_scroll(s);
+// Scrollbar fade animation + track/thumb rendering
+static void gal_render_scrollbar(AppState *s, InstanceData *instances, int *inst_count, POINT pt, int ms)
+{
     if (ms > 0)
     {
         if (fabsf(s->scroll_target_y - s->scroll_current_y) > 0.5F)
@@ -324,67 +301,70 @@ void gal_render_gallery(HDC hdc, AppState *s)
             float track_y = 8.0F * s->dpi_scale;
             float track_h = (float) s->window_height - (16.0F * s->dpi_scale);
 
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = track_x;
-            instances[inst_count].y = track_y;
-            instances[inst_count].w = track_w;
-            instances[inst_count].h = track_h;
-            instances[inst_count].tex_index = TOKEN_PANEL;
-            instances[inst_count].opacity = 0.15F * s->scrollbar_opacity;
-            instances[inst_count].corner_radius = track_w * 0.5F;
-            inst_count++;
+            instances[*inst_count] = (InstanceData){0};
+            instances[*inst_count].x = track_x;
+            instances[*inst_count].y = track_y;
+            instances[*inst_count].w = track_w;
+            instances[*inst_count].h = track_h;
+            instances[*inst_count].tex_index = TOKEN_PANEL;
+            instances[*inst_count].opacity = 0.15F * s->scrollbar_opacity;
+            instances[*inst_count].corner_radius = track_w * 0.5F;
+            (*inst_count)++;
 
             float thumb_h = ((float) s->window_height / (float) (ms + s->window_height)) * track_h;
             if (thumb_h < 24.0F * s->dpi_scale)
                 thumb_h = 24.0F * s->dpi_scale;
             float thumb_y = track_y + ((s->scroll_current_y / (float) ms) * (track_h - thumb_h));
 
-            instances[inst_count] = (InstanceData){0};
-            instances[inst_count].x = track_x;
-            instances[inst_count].y = thumb_y;
-            instances[inst_count].w = track_w;
-            instances[inst_count].h = thumb_h;
-            instances[inst_count].tex_index = TOKEN_SCROLLBAR;
-            instances[inst_count].opacity = s->scrollbar_opacity * (scrollbar_hovered ? 1.0F : 0.7F);
-            instances[inst_count].corner_radius = track_w * 0.5F;
-            inst_count++;
+            instances[*inst_count] = (InstanceData){0};
+            instances[*inst_count].x = track_x;
+            instances[*inst_count].y = thumb_y;
+            instances[*inst_count].w = track_w;
+            instances[*inst_count].h = thumb_h;
+            instances[*inst_count].tex_index = TOKEN_SCROLLBAR;
+            instances[*inst_count].opacity = s->scrollbar_opacity * (scrollbar_hovered ? 1.0F : 0.7F);
+            instances[*inst_count].corner_radius = track_w * 0.5F;
+            (*inst_count)++;
         }
     }
+}
 
+// Top bar backdrop + border
+static void gal_render_topbar(AppState *s, InstanceData *instances, int *inst_count)
+{
     // Top Bar Backdrop (drawn after grid items to mask scrolled overflow)
-    instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0F;
-    instances[inst_count].y = 0.0F;
-    instances[inst_count].w = (float) s->window_width;
-    instances[inst_count].h = s->layout.topbar_height;
-    instances[inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
-    instances[inst_count].opacity = 1.0F;
-    instances[inst_count].corner_radius = 0.0F;
-    inst_count++;
+    instances[*inst_count] = (InstanceData){0};
+    instances[*inst_count].x = 0.0F;
+    instances[*inst_count].y = 0.0F;
+    instances[*inst_count].w = (float) s->window_width;
+    instances[*inst_count].h = s->layout.topbar_height;
+    instances[*inst_count].tex_index = TOKEN_PANEL; // One Dark panel color
+    instances[*inst_count].opacity = 1.0F;
+    instances[*inst_count].corner_radius = 0.0F;
+    (*inst_count)++;
 
     // Top Bar Bottom Border
-    instances[inst_count] = (InstanceData){0};
-    instances[inst_count].x = 0.0F;
-    instances[inst_count].y = s->layout.topbar_height - (1.0F * s->dpi_scale);
-    instances[inst_count].w = (float) s->window_width;
-    instances[inst_count].h = 1.0F * s->dpi_scale;
-    instances[inst_count].tex_index = TOKEN_BORDER; // One Dark border color
-    instances[inst_count].opacity = 1.0F;
-    instances[inst_count].corner_radius = 0.0F;
-    inst_count++;
+    instances[*inst_count] = (InstanceData){0};
+    instances[*inst_count].x = 0.0F;
+    instances[*inst_count].y = s->layout.topbar_height - (1.0F * s->dpi_scale);
+    instances[*inst_count].w = (float) s->window_width;
+    instances[*inst_count].h = 1.0F * s->dpi_scale;
+    instances[*inst_count].tex_index = TOKEN_BORDER; // One Dark border color
+    instances[*inst_count].opacity = 1.0F;
+    instances[*inst_count].corner_radius = 0.0F;
+    (*inst_count)++;
+}
 
-    // Sort Button & Dropdown Layout (compact position vertically centered in topbar)
-    int btn_w = (int) (90 * s->dpi_scale);
-    int btn_h = (int) (s->layout.button_height);
-    int btn_x = (int) ((float) s->window_width - (float) btn_w - (16.0F * s->dpi_scale));
-    int btn_y = (int) ((s->layout.topbar_height - (float) btn_h) / 2.0F);
-
-    ui_button(instances, &inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0F, (float) pt.x,
+// Sort button UI + dropdown (InstanceData only, draws + resets inst_count)
+static void gal_render_sort_menu(AppState *s, InstanceData *instances, int *inst_count, POINT pt, int btn_x, int btn_y,
+                                 int btn_w, int btn_h)
+{
+    ui_button(instances, inst_count, (float) btn_x, (float) btn_y, (float) btn_w, (float) btn_h, 0.0F, (float) pt.x,
               (float) pt.y, 4.0F * s->dpi_scale);
 
     // Draw the main gallery, topbar, and button first
-    r_draw_instances(s, instances, inst_count);
-    inst_count = 0;
+    r_draw_instances(s, instances, *inst_count);
+    *inst_count = 0;
 
     if (s->sort_menu_open)
     {
@@ -395,26 +375,28 @@ void gal_render_gallery(HDC hdc, AppState *s)
         int menu_x = btn_x + btn_w - menu_w;
         int menu_y = btn_y + btn_h + (int) (5 * s->dpi_scale);
 
-        ui_blur_panel(instances, &inst_count, (float) menu_x, (float) menu_y, (float) menu_w, (float) menu_h, 0.92F, 1,
+        ui_blur_panel(instances, inst_count, (float) menu_x, (float) menu_y, (float) menu_w, (float) menu_h, 0.92F, 1,
                       s->layout.card_radius);
-        r_draw_instances(s, instances, inst_count);
+        r_draw_instances(s, instances, *inst_count);
     }
+}
 
-    // Begin D2D render batch (folder text + breadcrumb + sort text)
-    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
-
+// D2D text pass: folder labels, breadcrumb, sort button text, and sort menu items
+static void gal_render_folder_text(AppState *s, const GridLayout *lay, float thumb_size, int btn_x, int btn_y,
+                                   int btn_w, int btn_h)
+{
     // Render Folder text & icons in D2D pass
     if (s->grid_items)
     {
-        for (int i = lay.first_visible; i < lay.last_visible; i++)
+        for (int i = lay->first_visible; i < lay->last_visible; i++)
         {
             if (s->grid_items[i].type == ITEM_FOLDER)
             {
-                int row = i / lay.cols;
-                int col = i % lay.cols;
-                float x = (float) (lay.left_margin + (col * lay.pad));
-                float y = s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay.pad) -
-                          (float) lay.scroll_int;
+                int row = i / lay->cols;
+                int col = i % lay->cols;
+                float x = (float) (lay->left_margin + (col * lay->pad));
+                float y = s->layout.topbar_height + s->layout.panel_padding + (float) (row * lay->pad) -
+                          (float) lay->scroll_int;
 
                 if (y + thumb_size < 0 || y > (float) s->window_height)
                     continue;
@@ -589,6 +571,58 @@ void gal_render_gallery(HDC hdc, AppState *s)
                             s->dwrite_format_regular, s->theme.text_main);
         }
     }
+}
+
+void gal_render_gallery(HDC hdc, AppState *s)
+{
+    (void) hdc;
+    r_clear_theme(s);
+
+    int total_items = s->grid_items ? s->grid_item_count : s->count;
+    if (total_items == 0)
+    {
+        if (s->scanning)
+        {
+            float muted[4] = {0.663F, 0.686F, 0.737F, 1.0F};
+            s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+            r_draw_text_aligned(s, L"Scanning\u2026", 0, 0, (float) s->window_width, (float) s->window_height,
+                                ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format, muted);
+            s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
+        }
+        r_present(s);
+        return;
+    }
+
+    GridLayout lay;
+    gal_calc_layout(s, &lay);
+
+    static InstanceData instances[MAX_INSTANCES];
+    int inst_count = 0;
+
+    POINT pt;
+    GetCursorPos(&pt);
+    ScreenToClient(s->hwnd, &pt);
+
+    float thumb_size = 160.0F * s->dpi_scale;
+
+    gal_render_grid_thumbnails(s, instances, &inst_count, &lay, pt, thumb_size);
+
+    int ms = gal_max_scroll(s);
+    gal_render_scrollbar(s, instances, &inst_count, pt, ms);
+
+    gal_render_topbar(s, instances, &inst_count);
+
+    int btn_w = (int) (90 * s->dpi_scale);
+    int btn_h = (int) (s->layout.button_height);
+    int btn_x = (int) ((float) s->window_width - (float) btn_w - (16.0F * s->dpi_scale));
+    int btn_y = (int) ((s->layout.topbar_height - (float) btn_h) / 2.0F);
+
+    gal_render_sort_menu(s, instances, &inst_count, pt, btn_x, btn_y, btn_w, btn_h);
+
+    // Begin D2D render batch (folder text + breadcrumb + sort text)
+    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+
+    gal_render_folder_text(s, &lay, thumb_size, btn_x, btn_y, btn_w, btn_h);
 
     s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
 

@@ -51,6 +51,17 @@
 #define APP_VERSION_W L"0.1.0"
 #endif
 
+// COM helper — safely release and nullify any COM interface pointer
+#define SAFE_RELEASE(p)                                            \
+    do                                                             \
+    {                                                              \
+        if (p)                                                     \
+        {                                                          \
+            ((IUnknown *) (p))->lpVtbl->Release((IUnknown *) (p)); \
+            (p) = NULL;                                            \
+        }                                                          \
+    } while (0)
+
 #define MIN_WINDOW_WIDTH 400
 #define MIN_WINDOW_HEIGHT 300
 
@@ -206,18 +217,6 @@ static inline void *rb_try_pop(RingBuffer *rb)
     }
     LeaveCriticalSection(&rb->lock);
     return item;
-}
-
-static inline void *rb_wait_pop(RingBuffer *rb, DWORD timeout_ms)
-{
-    for (;;)
-    {
-        void *item = rb_try_pop(rb);
-        if (item != NULL)
-            return item;
-        if (WaitForSingleObject(rb->nonempty, timeout_ms) != WAIT_OBJECT_0)
-            return NULL;
-    }
 }
 
 // -------------------------------------------------------------------------
@@ -556,16 +555,16 @@ void format_size(uint64_t bytes, wchar_t *buf, int len);
 void format_filetime(uint64_t filetime, wchar_t *buf, int len);
 
 // layout.c
-void gal_calc_layout(AppState *s, GridLayout *out);
-int gal_max_scroll(AppState *s);
+void gal_calc_layout(const AppState *s, GridLayout *out);
+int gal_max_scroll(const AppState *s);
 
 // app.c
 void app_init(AppState *s);
 void app_shutdown(AppState *s);
 void app_load_folder(AppState *s, const wchar_t *path);
 void app_update_title(AppState *s);
-void get_pictures_folder(wchar_t *buf, int len);
-void get_parent_dir(const wchar_t *path, wchar_t *out, int max_len);
+void app_get_pictures_folder(wchar_t *buf, int len);
+void app_get_parent_dir(const wchar_t *path, wchar_t *out, int max_len);
 ImageEntry *app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size,
                                    uint64_t last_modified, uint64_t created_time);
 void app_populate_grid_items(AppState *s);
@@ -598,7 +597,7 @@ DWORD WINAPI aw_worker_thread(LPVOID param);
 void gal_render_gallery(HDC hdc, AppState *s);
 void gal_render_fullimage(HDC hdc, AppState *s);
 void gal_clamp_zoom_pan(AppState *s);
-int gal_hit_test(AppState *s, int x, int y, int *out_index);
+int gal_hit_test(const AppState *s, int x, int y, int *out_index);
 int gal_handle_ui_click(AppState *s, int x, int y);
 int gal_handle_fullimage_click(AppState *s, int x, int y);
 void gal_apply_sort(AppState *s);
@@ -609,6 +608,9 @@ void gal_open_full(AppState *s, int index);
 void gal_close_full(AppState *s);
 void gal_select_full_image(AppState *s, int index);
 void gal_tick_smooth_scroll(AppState *s);
+void fiv_strip_bounds(AppState *s, int active_strip_idx, int total_images, int *out_start, int *out_end,
+                      int *out_num_thumbs);
+int fiv_is_in_strip(AppState *s, const wchar_t *path);
 void gal_activate_item(AppState *s, int idx);
 
 // renderer.c

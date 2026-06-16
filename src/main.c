@@ -152,7 +152,11 @@ static void tick_delta_time(AppState *s)
 static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    union { LPARAM l; LoadResult *p; } u = { .l = lParam };
+    union
+    {
+        LPARAM l;
+        LoadResult *p;
+    } u = {.l = lParam};
     LoadResult *result = u.p;
     if (result)
     {
@@ -192,7 +196,11 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    union { LPARAM l; FullLoadResult *p; } u = { .l = lParam };
+    union
+    {
+        LPARAM l;
+        FullLoadResult *p;
+    } u = {.l = lParam};
     FullLoadResult *result = u.p;
     if (result && result->succeeded && result->rgba_data)
     {
@@ -259,7 +267,11 @@ static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
             g_state.full_load_pending = 0;
             g_state.needs_redraw = 1;
             InvalidateRect(hwnd, NULL, TRUE);
-            if (result) { result->rgba_data = NULL; free(result); }
+            if (result)
+            {
+                result->rgba_data = NULL;
+                free(result);
+            }
         }
     }
     else
@@ -267,7 +279,11 @@ static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
         g_state.full_load_pending = 0;
         g_state.needs_redraw = 1;
         InvalidateRect(hwnd, NULL, TRUE);
-        if (result) { result->rgba_data = NULL; free(result); }
+        if (result)
+        {
+            result->rgba_data = NULL;
+            free(result);
+        }
     }
 }
 
@@ -277,7 +293,11 @@ static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 static void on_scan_progress(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    union { LPARAM l; ScanBatch *p; } u = { .l = lParam };
+    union
+    {
+        LPARAM l;
+        ScanBatch *p;
+    } u = {.l = lParam};
     ScanBatch *batch = u.p;
     if (!batch)
         return;
@@ -332,7 +352,11 @@ static void on_scan_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    union { LPARAM l; FileChange *p; } u = { .l = lParam };
+    union
+    {
+        LPARAM l;
+        FileChange *p;
+    } u = {.l = lParam};
     FileChange *fc = u.p;
     if (!fc)
         return;
@@ -539,7 +563,7 @@ static void on_keydown(HWND hwnd, int vk)
                 if (_wcsicmp(g_state.viewing_dir, g_state.current_dir) != 0)
                 {
                     wchar_t parent[MAX_PATH_LEN];
-                    get_parent_dir(g_state.viewing_dir, parent, MAX_PATH_LEN);
+                    app_get_parent_dir(g_state.viewing_dir, parent, MAX_PATH_LEN);
                     wcsncpy(g_state.viewing_dir, parent, MAX_PATH_LEN - 1);
                     g_state.viewing_dir[MAX_PATH_LEN - 1] = L'\0';
                     app_populate_grid_items(&g_state);
@@ -767,7 +791,11 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             return 0;
         case WM_DROPFILES:
         {
-            union { WPARAM w; HDROP p; } ud = { .w = wParam };
+            union
+            {
+                WPARAM w;
+                HDROP p;
+            } ud = {.w = wParam};
             on_drop_files(hwnd, ud.p);
             return 0;
         }
@@ -798,7 +826,11 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             g_state.dpi_scale = HIWORD(wParam) / 96.0F;
             gal_update_layout_scales(&g_state);
             gal_update_layout(&g_state);
-            union { LPARAM l; RECT *p; } ur = { .l = lParam };
+            union
+            {
+                LPARAM l;
+                RECT *p;
+            } ur = {.l = lParam};
             RECT *r = ur.p;
             SetWindowPos(hwnd, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
@@ -807,7 +839,11 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
         case WM_GETMINMAXINFO:
         {
-            union { LPARAM l; MINMAXINFO *p; } um = { .l = lParam };
+            union
+            {
+                LPARAM l;
+                MINMAXINFO *p;
+            } um = {.l = lParam};
             MINMAXINFO *mmi = um.p;
             mmi->ptMinTrackSize.x = MIN_WINDOW_WIDTH;
             mmi->ptMinTrackSize.y = MIN_WINDOW_HEIGHT;
@@ -897,7 +933,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     // Load default folder
     wchar_t pictures_path[MAX_PATH_LEN];
-    get_pictures_folder(pictures_path, MAX_PATH_LEN);
+    app_get_pictures_folder(pictures_path, MAX_PATH_LEN);
     app_load_folder(&g_state, pictures_path);
     InvalidateRect(g_state.hwnd, NULL, TRUE);
 
