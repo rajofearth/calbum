@@ -156,7 +156,7 @@ This project maintains a high quality bar:
 - **Code formatting** via `clang-format` (configured in `.clang-format`)
 - **No file exceeds 1,000 lines** — each module has a focused responsibility
 - **Enforced C17 standard** via `-std=c17` in the Makefile
-- **29 unit tests** covering layout, hit-testing, state machines, folder navigation, and cache eviction
+- **26 unit tests** covering layout, hit-testing, state machines, folder navigation, and cache eviction
 
 ### Style Guide
 

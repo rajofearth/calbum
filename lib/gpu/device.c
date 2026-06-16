@@ -180,58 +180,56 @@ int r_init(GpuState *r, TextState *txt, HWND hwnd)
 
     if (txt->dwrite_factory)
     {
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 15.0F, L"en-US", &txt->dwrite_format_regular);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_UI, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_UI, L"en-US", &txt->dwrite_format_regular);
 
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 15.0F, L"en-US", &txt->dwrite_format_semibold);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_UI, NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_UI, L"en-US", &txt->dwrite_format_semibold);
 
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.5F, L"en-US", &txt->dwrite_format_small);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_UI, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_SMALL, L"en-US", &txt->dwrite_format_small);
 
-        const wchar_t *mono_font = L"Consolas";
+        const wchar_t *mono_font = FONT_MONO_FALLBACK;
         IDWriteFontCollection *collection = NULL;
         if (SUCCEEDED(txt->dwrite_factory->lpVtbl->GetSystemFontCollection(txt->dwrite_factory, &collection, FALSE)) &&
             collection)
         {
             UINT32 index = 0;
             BOOL exists = FALSE;
-            collection->lpVtbl->FindFamilyName(collection, L"Zed Mono", &index, &exists);
+            collection->lpVtbl->FindFamilyName(collection, FONT_MONO_ALT1, &index, &exists);
             if (exists)
-            {
-                mono_font = L"Zed Mono";
-            }
+                mono_font = FONT_MONO_ALT1;
             else
             {
-                collection->lpVtbl->FindFamilyName(collection, L"Lilex", &index, &exists);
+                collection->lpVtbl->FindFamilyName(collection, FONT_MONO_ALT2, &index, &exists);
                 if (exists)
-                    mono_font = L"Lilex";
+                    mono_font = FONT_MONO_ALT2;
             }
             collection->lpVtbl->Release(collection);
         }
 
         txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL,
-                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0F,
-                                                      L"en-US", &txt->dwrite_format_mono);
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_MONO, L"en-US", &txt->dwrite_format_mono);
 
         txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, mono_font, NULL, DWRITE_FONT_WEIGHT_NORMAL,
-                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 11.0F,
-                                                      L"en-US", &txt->dwrite_format_mono_small);
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_MONO_SMALL, L"en-US", &txt->dwrite_format_mono_small);
 
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe UI Variable", NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 11.5F, L"en-US", &txt->dwrite_format_small_semibold);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_UI, NULL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_SMALL, L"en-US", &txt->dwrite_format_small_semibold);
 
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 18.0F, L"en-US", &txt->dwrite_format_icons);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_ICONS, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_ICON, L"en-US", &txt->dwrite_format_icons);
 
-        txt->dwrite_factory->lpVtbl->CreateTextFormat(
-            txt->dwrite_factory, L"Segoe Fluent Icons", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 48.0F, L"en-US", &txt->dwrite_format_icons_large);
+        txt->dwrite_factory->lpVtbl->CreateTextFormat(txt->dwrite_factory, FONT_ICONS, NULL, DWRITE_FONT_WEIGHT_NORMAL,
+                                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                      FONT_SIZE_ICON_LARGE, L"en-US", &txt->dwrite_format_icons_large);
 
         txt->dwrite_format = txt->dwrite_format_regular;
     }
@@ -239,7 +237,7 @@ int r_init(GpuState *r, TextState *txt, HWND hwnd)
     // Create cached text layouts for static icon glyphs
     if (txt->dwrite_factory && txt->dwrite_format_icons)
     {
-        txt->dwrite_factory->lpVtbl->CreateTextLayout(txt->dwrite_factory, L"\uE72B", 1, txt->dwrite_format_icons,
+        txt->dwrite_factory->lpVtbl->CreateTextLayout(txt->dwrite_factory, GLYPH_BACK, 1, txt->dwrite_format_icons,
                                                       9999.0F, 9999.0F, &txt->layout_back);
         if (txt->layout_back)
         {
@@ -247,7 +245,7 @@ int r_init(GpuState *r, TextState *txt, HWND hwnd)
             txt->layout_back->lpVtbl->SetParagraphAlignment(txt->layout_back, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
 
-        txt->dwrite_factory->lpVtbl->CreateTextLayout(txt->dwrite_factory, L"\uE946", 1, txt->dwrite_format_icons,
+        txt->dwrite_factory->lpVtbl->CreateTextLayout(txt->dwrite_factory, GLYPH_INFO, 1, txt->dwrite_format_icons,
                                                       9999.0F, 9999.0F, &txt->layout_info);
         if (txt->layout_info)
         {

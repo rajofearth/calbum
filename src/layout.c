@@ -87,17 +87,17 @@ int gal_hit_test(const DataState *data, const ViewState *view, const UIState *ui
 void gal_clamp_zoom_pan(ViewState *view, int window_width, int window_height, float dpi_scale, float topbar_height)
 {
     (void) dpi_scale;
-    if (view->zoom_level <= 1.0F)
+    if (view->zoom_level <= ZOOM_MIN)
     {
-        view->zoom_level = 1.0F;
+        view->zoom_level = ZOOM_MIN;
         view->zoom_pan_x = 0.0F;
         view->zoom_pan_y = 0.0F;
         view->is_panning = 0;
         return;
     }
-    if (view->zoom_level > 8.0F)
+    if (view->zoom_level > ZOOM_MAX)
     {
-        view->zoom_level = 8.0F;
+        view->zoom_level = ZOOM_MAX;
     }
 
     float img_w = 0.0F;

@@ -13,6 +13,9 @@
 
 #include <windows.h>
 
+// Application-wide named constants
+#include "constants.h"
+
 // Ensure 'interface' is defined for COM headers (required by some language servers)
 #ifndef interface
 #define interface struct

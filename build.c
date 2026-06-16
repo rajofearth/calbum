@@ -24,33 +24,34 @@
 #define STB_DXT_IMPLEMENTATION
 #include "lib/stb_dxt.h"
 
-// ── 3. Shared Types & App Manifest ──────────────────────────────────────
+// ── 3. Application Constants ───────────────────────────────────────────
+#include "src/constants.h"
+
+// ── 4. Shared Types & App Manifest ──────────────────────────────────────
 // types.h provides all type definitions and forward declarations.
 // Each library .c file includes it via `#include "src/types.h"`.
 #include "src/types.h"
 
-// ── 4. Core / Utility Libraries ────────────────────────────────────────
+// ── 5. Core / Utility Libraries ────────────────────────────────────────
 #include "lib/core/utils.c"
 #include "lib/core/logger.c"
 
-// ── 5. GPU Subsystem ────────────────────────────────────────────────────
-// Order: device.c first (includes system headers: d2d1.h, dwrite.h, etc.)
-// then shader data, then sub-modules that use those types.
+// ── 6. GPU Subsystem ────────────────────────────────────────────────────
 #include "lib/gpu/device.c"
 #include "lib/gpu/shader.c"
 #include "lib/gpu/texture.c"
 #include "lib/gpu/d2d.c"
 #include "lib/gpu/fullimage.c"
 
-// ── 6. UI Widgets ───────────────────────────────────────────────────────
+// ── 7. UI Widgets ───────────────────────────────────────────────────────
 #include "lib/ui/ui.c"
 
-// ── 7. OS & Data Subsystems ────────────────────────────────────────────
+// ── 8. OS & Data Subsystems ────────────────────────────────────────────
 #include "lib/fs/scanner.c"
 #include "lib/image/loader.c"
 #include "lib/fs/monitor.c"
 
-// ── 8. App Logic ───────────────────────────────────────────────────────
+// ── 9. App Logic ───────────────────────────────────────────────────────
 #include "src/layout.c"
 #include "src/gallery_sort.c"
 #include "src/gallery_fullimage.c"
@@ -58,5 +59,8 @@
 #include "src/asset_worker.c"
 #include "src/app.c"
 
-// ── 9. Entry Point ─────────────────────────────────────────────────────
+// ── 10. Entry Point ─────────────────────────────────────────────────────
 #include "src/main.c"
+
+// ── 11. Event Handlers ────────────────────────────────────────────────
+#include "src/events.c"

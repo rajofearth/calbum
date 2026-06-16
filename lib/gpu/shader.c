@@ -8,6 +8,11 @@
 // The pixel shader samples from either the BC1 texture array (t0),
 // the full-image SRV (t1), the blur backdrop (t2), or renders solid
 // colors based on the token constants.
+//
+// GCC (MinGW) supports long string literals as an extension; silence the C99
+// conformance warning since all our target compilers handle this correctly.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverlength-strings"
 const char *shader_src =
     "cbuffer Constants : register(b0) {\n"
     "    float2 window_size;\n"
@@ -136,3 +141,4 @@ const char *shader_src =
     "    color.rgb *= color.a;\n"
     "    return color;\n"
     "}\n";
+#pragma GCC diagnostic pop
