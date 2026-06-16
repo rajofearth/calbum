@@ -74,11 +74,12 @@ typedef struct
     int tail;
     CRITICAL_SECTION lock;
     HANDLE nonempty;
+    void **slots;
 } RingBuffer;
 
 static inline void rb_init(RingBuffer *rb, void *slot_storage, int cap)
 {
-    (void) slot_storage;
+    rb->slots = (void **) slot_storage;
     rb->capacity = cap;
     rb->head = 0;
     rb->tail = 0;

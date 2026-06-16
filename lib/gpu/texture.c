@@ -62,6 +62,8 @@ void r_draw_instances(GpuState *r, void *instances, int count)
 {
     if (count == 0)
         return;
+    if (count > MAX_INSTANCES)
+        count = MAX_INSTANCES;
 
     D3D11_MAPPED_SUBRESOURCE ms;
     r->d3d_context->lpVtbl->Map(r->d3d_context, (ID3D11Resource *) r->instance_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0,

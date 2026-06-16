@@ -100,14 +100,8 @@ void gal_clamp_zoom_pan(ViewState *view, int window_width, int window_height, fl
         view->zoom_level = ZOOM_MAX;
     }
 
-    float img_w = 0.0F;
-    float img_h = 0.0F;
-    // Note: no image data access in this function anymore - caller provides image dimensions
-    if (img_w <= 0.0F || img_h <= 0.0F)
-    {
-        img_w = (float) window_width;
-        img_h = (float) window_height;
-    }
+    float img_w = (float) window_width;
+    float img_h = (float) window_height;
 
     float main_w = (float) window_width - (40.0F * dpi_scale);
     float main_h = (float) window_height - (topbar_height + (160.0F * dpi_scale));

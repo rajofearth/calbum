@@ -129,6 +129,7 @@ static void scan_recursive_thread(const wchar_t *dir, HWND hwnd, ScanBatch **bat
                     ScanBatch *to_send = *batch;
                     PostMessageW(hwnd, WM_CALBUM_SCAN_PROGRESS, 0, (LPARAM) to_send);
                     *batch = (ScanBatch *) calloc(1, sizeof(ScanBatch));
+                    if (!*batch) return;
                 }
             }
         }
@@ -140,6 +141,12 @@ DWORD WINAPI fs_scan_thread(LPVOID param)
 {
     ScanParam *sp = (ScanParam *) param;
     ScanBatch *batch = (ScanBatch *) calloc(1, sizeof(ScanBatch));
+    if (!batch)
+    {
+        PostMessageW(sp->hwnd, WM_CALBUM_SCAN_COMPLETE, 0, 0);
+        free(sp);
+        return 0;
+    }
     int total = 0;
 
     scan_recursive_thread(sp->directory, sp->hwnd, &batch, &total);

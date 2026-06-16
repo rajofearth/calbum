@@ -606,7 +606,8 @@ DWORD WINAPI aw_worker_thread(LPVOID param);
 
 // gallery.c
 void gal_render_gallery(HDC hdc, GpuState *r, TextState *txt, DataState *data, ViewState *view, UIState *ui,
-                        WorkerState *worker, int window_width, int window_height, HWND hwnd);
+                        WorkerState *worker, int window_width, int window_height, HWND hwnd,
+                        double delta_time);
 void gal_render_fullimage(HDC hdc, GpuState *r, TextState *txt, DataState *data, ViewState *view, UIState *ui,
                           WorkerState *worker, int window_width, int window_height, HWND hwnd);
 void gal_clamp_zoom_pan(ViewState *view, int window_width, int window_height, float dpi_scale, float topbar_height);

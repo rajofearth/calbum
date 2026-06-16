@@ -78,12 +78,24 @@ int r_init(GpuState *r, TextState *txt, HWND hwnd)
     {
         OutputDebugStringA(err->lpVtbl->GetBufferPointer(err));
         err->lpVtbl->Release(err);
+        err = NULL;
+    }
+    if (!vs_blob)
+    {
+        log_error(L"r_init: vertex shader compilation failed");
+        return 0;
     }
     D3DCompile(shader_src, strlen(shader_src), NULL, NULL, NULL, "ps_main", "ps_5_0", 0, 0, &ps_blob, &err);
     if (err)
     {
         OutputDebugStringA(err->lpVtbl->GetBufferPointer(err));
         err->lpVtbl->Release(err);
+    }
+    if (!ps_blob)
+    {
+        log_error(L"r_init: pixel shader compilation failed");
+        vs_blob->lpVtbl->Release(vs_blob);
+        return 0;
     }
 
     r->d3d_device->lpVtbl->CreateVertexShader(r->d3d_device, vs_blob->lpVtbl->GetBufferPointer(vs_blob),

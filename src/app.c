@@ -12,11 +12,19 @@ void app_init(AppState *s)
     // Arena
     void *arena = VirtualAlloc(NULL, ARENA_CAPACITY, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!arena)
+    {
         log_error(L"app_init: VirtualAlloc for arena failed (size=%llu)", ARENA_CAPACITY);
+        return;
+    }
     arena_init(&s->data.arena, arena, ARENA_CAPACITY);
 
     // nav_arena (2MB block)
     void *nav_arena_buf = VirtualAlloc(NULL, (SIZE_T) (2 * 1024 * 1024), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!nav_arena_buf)
+    {
+        log_error(L"app_init: VirtualAlloc for nav_arena failed (size=2097152)");
+        return;
+    }
     arena_init(&s->data.nav_arena, nav_arena_buf, (size_t) (2 * 1024 * 1024));
 
     // Frame timing
@@ -129,7 +137,8 @@ void app_load_folder(AppState *s, GpuState *r, TextState *txt, const wchar_t *pa
             FullLoadResult *result = u.p;
             if (result)
             {
-                result->rgba_data = NULL;
+                if (result->rgba_data)
+                    free(result->rgba_data);
                 free(result);
             }
         }

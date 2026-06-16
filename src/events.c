@@ -394,11 +394,12 @@ static void on_paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
-    if (g_state.window_width > 0 && g_state.window_height > 0)
+    if (g_state.window_width > 0 && g_state.window_height > 0 && g_state.gpu.d3d_context)
     {
         if (g_state.view.view_mode == VIEW_GALLERY)
             gal_render_gallery(NULL, &g_state.gpu, &g_state.txt, &g_state.data, &g_state.view, &g_state.ui,
-                               &g_state.worker, g_state.window_width, g_state.window_height, g_state.hwnd);
+                               &g_state.worker, g_state.window_width, g_state.window_height, g_state.hwnd,
+                               g_state.delta_time);
         else
             gal_render_fullimage(NULL, &g_state.gpu, &g_state.txt, &g_state.data, &g_state.view, &g_state.ui,
                                  &g_state.worker, g_state.window_width, g_state.window_height, g_state.hwnd);
@@ -418,7 +419,8 @@ static void on_size(HWND hwnd)
 
     g_state.window_width = width;
     g_state.window_height = height;
-    r_resize(&g_state.gpu, &g_state.txt, width, height, g_state.ui.dpi_scale);
+    if (g_state.gpu.d3d_context)
+        r_resize(&g_state.gpu, &g_state.txt, width, height, g_state.ui.dpi_scale);
     InvalidateRect(hwnd, NULL, TRUE);
 }
 

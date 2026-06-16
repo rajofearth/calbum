@@ -65,7 +65,7 @@ jobs:
         run: |
           mkdir -p tests/build
           ${{ matrix.triple }}-gcc tests/test_main.c -o tests/build/test_runner \
-            -g -O0 -Wall -Wextra -std=c17 \
+            -g -O0 -Wall -Wextra -std=c17 -DCALBUM_TEST_BUILD \
             -lgdi32 -lshell32 -lshlwapi -luser32 -lkernel32 -lole32 -luuid \
             -ld3d11 -ldxguid -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite \
             -I.

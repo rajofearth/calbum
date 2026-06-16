@@ -143,9 +143,14 @@ static void gal_render_grid_thumbnails(DataState *data, ViewState *view, UIState
                                        float thumb_size, HWND hwnd)
 {
     (void) window_width;
-    (void) txt;
     (void) worker;
     (void) hwnd;
+
+    // Collect warning-icon positions for batching in a single D2D pass
+    float warn_x[64];
+    float warn_y[64];
+    int warn_count = 0;
+
     for (int i = lay->first_visible; i < lay->last_visible; i++)
     {
         int row = i / lay->cols;
@@ -261,15 +266,15 @@ static void gal_render_grid_thumbnails(DataState *data, ViewState *view, UIState
                 }
                 (*inst_count)++;
 
-                // Warning icon overlay for FAILED state
+                // Warning icon overlay for FAILED state (collected for batched draw)
                 if (data->images[img_idx].state == IMG_STATE_FAILED)
                 {
-                    txt->d2d_rtv->lpVtbl->BeginDraw(txt->d2d_rtv);
-                    r_draw_text_aligned(txt, r, L"\u26A0", x + thumb_size - (16.0F * ui->dpi_scale),
-                                        y + thumb_size - (16.0F * ui->dpi_scale), 16.0F * ui->dpi_scale,
-                                        16.0F * ui->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, txt->dwrite_format_icons,
-                                        ui->theme.accent);
-                    txt->d2d_rtv->lpVtbl->EndDraw(txt->d2d_rtv, NULL, NULL);
+                    if (warn_count < 64)
+                    {
+                        warn_x[warn_count] = x + thumb_size - (16.0F * ui->dpi_scale);
+                        warn_y[warn_count] = y + thumb_size - (16.0F * ui->dpi_scale);
+                        warn_count++;
+                    }
                 }
             }
         }
@@ -290,6 +295,20 @@ static void gal_render_grid_thumbnails(DataState *data, ViewState *view, UIState
 
         if (*inst_count >= MAX_INSTANCES - 16)
             break; // Leave room for scrollbar, topbar and buttons
+    }
+
+    // Batch all warning icons in a single D2D pass
+    if (warn_count > 0)
+    {
+        txt->d2d_rtv->lpVtbl->BeginDraw(txt->d2d_rtv);
+        for (int wi = 0; wi < warn_count; wi++)
+        {
+            r_draw_text_aligned(txt, r, L"\u26A0", warn_x[wi], warn_y[wi],
+                                16.0F * ui->dpi_scale, 16.0F * ui->dpi_scale,
+                                ALIGN_X_CENTER, ALIGN_Y_CENTER, txt->dwrite_format_icons,
+                                ui->theme.accent);
+        }
+        txt->d2d_rtv->lpVtbl->EndDraw(txt->d2d_rtv, NULL, NULL);
     }
 }
 
@@ -583,7 +602,8 @@ static void gal_render_folder_text(DataState *data, ViewState *view, UIState *ui
 }
 
 void gal_render_gallery(HDC hdc, GpuState *r, TextState *txt, DataState *data, ViewState *view, UIState *ui,
-                        WorkerState *worker, int window_width, int window_height, HWND hwnd)
+                        WorkerState *worker, int window_width, int window_height, HWND hwnd,
+                        double delta_time)
 {
     (void) hdc;
     r_clear_theme(r, ui->theme.bg);
@@ -626,7 +646,7 @@ void gal_render_gallery(HDC hdc, GpuState *r, TextState *txt, DataState *data, V
                                &lay, pt, thumb_size, hwnd);
 
     int ms = gal_max_scroll(data, view, ui, window_width, window_height);
-    gal_render_scrollbar(view, ui, window_width, window_height, 0.0, instances, &inst_count, pt, ms);
+    gal_render_scrollbar(view, ui, window_width, window_height, delta_time, instances, &inst_count, pt, ms);
 
     gal_render_topbar(ui, window_width, instances, &inst_count);
 

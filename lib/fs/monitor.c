@@ -113,7 +113,25 @@ int fm_start_monitor(AppState *s, const wchar_t *directory)
     }
 
     s->worker.monitor_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!s->worker.monitor_stop_event)
+    {
+        CloseHandle(s->worker.dir_handle);
+        s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateEventW failed (err=%lu)", GetLastError());
+        return 0;
+    }
+
     s->worker.monitor_thread = CreateThread(NULL, 0, fm_thread_proc, s, 0, NULL);
+    if (!s->worker.monitor_thread)
+    {
+        CloseHandle(s->worker.monitor_stop_event);
+        s->worker.monitor_stop_event = NULL;
+        CloseHandle(s->worker.dir_handle);
+        s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateThread failed (err=%lu)", GetLastError());
+        return 0;
+    }
+
     s->worker.monitoring_active = 1;
     return 1;
 }
