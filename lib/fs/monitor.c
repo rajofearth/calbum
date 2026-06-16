@@ -4,7 +4,7 @@
 // Uses ReadDirectoryChangesW with overlapped I/O on a background thread.
 // File changes are posted to the main thread via custom window message.
 // =========================================================================
-#include "types.h"
+#include "src/types.h"
 #include <stdlib.h>
 
 // Map NT file notify action to our FileChange type enum
@@ -30,13 +30,13 @@ static int map_action(DWORD action)
 static DWORD WINAPI fm_thread_proc(LPVOID param)
 {
     AppState *s = (AppState *) param;
-    HANDLE hDir = s->dir_handle;
+    HANDLE hDir = s->worker.dir_handle;
 
     DWORD filter = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_SIZE |
                    FILE_NOTIFY_CHANGE_LAST_WRITE;
 
     // Synchronous ReadDirectoryChangesW polling with stop-event check
-    while (WaitForSingleObject(s->monitor_stop_event, 0) != WAIT_OBJECT_0)
+    while (WaitForSingleObject(s->worker.monitor_stop_event, 0) != WAIT_OBJECT_0)
     {
         char buf[4096];
         DWORD bytes = 0;
@@ -51,7 +51,7 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
                     wcsncpy(fname, fni->FileName, min(fni->FileNameLength / sizeof(wchar_t), MAX_PATH_LEN - 1));
 
                     wchar_t full[MAX_PATH_LEN];
-                    wcsncpy(full, s->current_dir, MAX_PATH_LEN - 1);
+                    wcsncpy(full, s->data.current_dir, MAX_PATH_LEN - 1);
                     size_t len = wcslen(full);
                     if (len && full[len - 1] != L'\\')
                         wcscat(full, L"\\");
@@ -88,6 +88,7 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
         }
         else
         {
+            log_error(L"fm_thread_proc: ReadDirectoryChangesW failed (err=%lu)", GetLastError());
             // Short sleep on error; stop event is checked at the top of the loop
             Sleep(100);
         }
@@ -95,57 +96,78 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
     return 0;
 }
 
+// NOTE: fm_start_monitor needs AppState for the thread proc (it accesses hwnd and data).
 int fm_start_monitor(AppState *s, const wchar_t *directory)
 {
-    if (s->monitoring_active)
+    if (s->worker.monitoring_active)
         return 1;
 
-    s->dir_handle = CreateFileW(directory, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    if (s->dir_handle == INVALID_HANDLE_VALUE)
+    s->worker.dir_handle =
+        CreateFileW(directory, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (s->worker.dir_handle == INVALID_HANDLE_VALUE)
     {
-        s->dir_handle = NULL;
+        s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateFileW failed for %s (err=%lu)", directory, GetLastError());
         return 0;
     }
 
-    s->monitor_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
-    s->monitor_thread = CreateThread(NULL, 0, fm_thread_proc, s, 0, NULL);
-    s->monitoring_active = 1;
+    s->worker.monitor_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!s->worker.monitor_stop_event)
+    {
+        CloseHandle(s->worker.dir_handle);
+        s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateEventW failed (err=%lu)", GetLastError());
+        return 0;
+    }
+
+    s->worker.monitor_thread = CreateThread(NULL, 0, fm_thread_proc, s, 0, NULL);
+    if (!s->worker.monitor_thread)
+    {
+        CloseHandle(s->worker.monitor_stop_event);
+        s->worker.monitor_stop_event = NULL;
+        CloseHandle(s->worker.dir_handle);
+        s->worker.dir_handle = NULL;
+        log_error(L"fm_start_monitor: CreateThread failed (err=%lu)", GetLastError());
+        return 0;
+    }
+
+    s->worker.monitoring_active = 1;
     return 1;
 }
 
-void fm_stop_monitor(AppState *s)
+void fm_stop_monitor(WorkerState *worker)
 {
-    if (!s->monitoring_active)
+    if (!worker->monitoring_active)
         return;
-    s->monitoring_active = 0;
+    worker->monitoring_active = 0;
 
     // Signal stop event first
-    if (s->monitor_stop_event)
-        SetEvent(s->monitor_stop_event);
+    if (worker->monitor_stop_event)
+        SetEvent(worker->monitor_stop_event);
 
     // Cancel any pending ReadDirectoryChangesW so the thread can exit promptly
-    if (s->dir_handle)
-        CancelIoEx(s->dir_handle, NULL);
+    if (worker->dir_handle)
+        CancelIoEx(worker->dir_handle, NULL);
 
-    // Close the directory handle; this also unblocks ReadDirectoryChangesW
-    if (s->dir_handle)
+    // Wait for the monitor thread to exit first (before closing handles)
+    if (worker->monitor_thread)
     {
-        CloseHandle(s->dir_handle);
-        s->dir_handle = NULL;
+        WaitForSingleObject(worker->monitor_thread, INFINITE);
+        CloseHandle(worker->monitor_thread);
+        worker->monitor_thread = NULL;
     }
 
-    // Wait for the monitor thread to finish (max 2s, then it will be terminated)
-    if (s->monitor_thread)
+    // Close the directory handle after the thread has exited
+    if (worker->dir_handle)
     {
-        WaitForSingleObject(s->monitor_thread, 2000);
-        CloseHandle(s->monitor_thread);
-        s->monitor_thread = NULL;
+        CloseHandle(worker->dir_handle);
+        worker->dir_handle = NULL;
     }
 
-    if (s->monitor_stop_event)
+    if (worker->monitor_stop_event)
     {
-        CloseHandle(s->monitor_stop_event);
-        s->monitor_stop_event = NULL;
+        CloseHandle(worker->monitor_stop_event);
+        worker->monitor_stop_event = NULL;
     }
 }

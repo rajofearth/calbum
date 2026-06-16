@@ -1,7 +1,7 @@
 // =========================================================================
 // image_loader.c — WIC + BC1 compression
 // =========================================================================
-#include "types.h"
+#include "src/types.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -15,6 +15,10 @@ int il_init_wic(void)
     if (SUCCEEDED(hr))
     {
         g_decode_buffer = malloc((size_t) 16 * 1024 * 1024);
+    }
+    else
+    {
+        log_error(L"il_init_wic: CoCreateInstance failed (hr=0x%08X)", (unsigned int) hr);
     }
     return SUCCEEDED(hr) ? 1 : 0;
 }
@@ -44,17 +48,28 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
     HRESULT hr = g_wic_factory->lpVtbl->CreateDecoderFromFilename(g_wic_factory, path, NULL, GENERIC_READ,
                                                                   WICDecodeMetadataCacheOnDemand, &decoder);
     if (FAILED(hr))
+    {
+        log_error(L"il_load_and_compress: WIC decode failed for %s", path);
         return NULL;
+    }
 
     IWICBitmapFrameDecode *frame = NULL;
     hr = decoder->lpVtbl->GetFrame(decoder, 0, &frame);
     decoder->lpVtbl->Release(decoder);
     if (FAILED(hr))
+    {
+        log_error(L"il_load_and_compress: WIC decode failed for %s", path);
         return NULL;
+    }
 
     UINT w = 0;
     UINT h = 0;
     frame->lpVtbl->GetSize(frame, &w, &h);
+    if (w == 0 || h == 0)
+    {
+        frame->lpVtbl->Release(frame);
+        return NULL;
+    }
 
     UINT tw = thumb_size;
     UINT th = thumb_size;
@@ -70,6 +85,10 @@ void *il_load_and_compress(const wchar_t *path, int thumb_size, int *out_size)
         tw = 1;
     if (th == 0)
         th = 1;
+    if (tw > 4096)
+        tw = 4096;
+    if (th > 4096)
+        th = 4096;
 
     IWICBitmapScaler *scaler = NULL;
     hr = g_wic_factory->lpVtbl->CreateBitmapScaler(g_wic_factory, &scaler);
@@ -211,13 +230,19 @@ void *il_load_full_image(const wchar_t *path, int *out_w, int *out_h)
     HRESULT hr = g_wic_factory->lpVtbl->CreateDecoderFromFilename(g_wic_factory, path, NULL, GENERIC_READ,
                                                                   WICDecodeMetadataCacheOnDemand, &decoder);
     if (FAILED(hr))
+    {
+        log_error(L"il_load_full_image: WIC decode failed for %s", path);
         return NULL;
+    }
 
     IWICBitmapFrameDecode *frame = NULL;
     hr = decoder->lpVtbl->GetFrame(decoder, 0, &frame);
     decoder->lpVtbl->Release(decoder);
     if (FAILED(hr))
+    {
+        log_error(L"il_load_full_image: WIC decode failed for %s", path);
         return NULL;
+    }
 
     UINT w = 0;
     UINT h = 0;

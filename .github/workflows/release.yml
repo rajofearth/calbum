@@ -53,6 +53,7 @@ jobs:
           -mwindows -std=c17 -O2 -Wall -Wextra
           -lgdi32 -lshell32 -luser32 -lkernel32 -lole32 -luuid -ld3d11 -ldxguid
           -lwindowscodecs -ld3dcompiler -ldwmapi -ld2d1 -ldwrite
+          -I.
         shell: sh
 
       - name: Upload artifact
