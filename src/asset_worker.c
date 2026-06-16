@@ -109,7 +109,26 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
                 if (result)
                 {
                     wcsncpy(result->path, req->path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
-                    result->rgba_data = rgba;
+                    // Copy the data because il_load_full_image returns a pointer
+                    // to a static global buffer shared by all worker threads.
+                    if (rgba && w > 0 && h > 0)
+                    {
+                        size_t data_size = (size_t) w * h * 4;
+                        void *rgba_copy = malloc(data_size);
+                        if (rgba_copy)
+                        {
+                            memcpy(rgba_copy, rgba, data_size);
+                            result->rgba_data = rgba_copy;
+                        }
+                        else
+                        {
+                            result->rgba_data = NULL;
+                        }
+                    }
+                    else
+                    {
+                        result->rgba_data = NULL;
+                    }
                     result->w = w;
                     result->h = h;
                     result->succeeded = (rgba != NULL);
@@ -143,13 +162,28 @@ int aw_start_workers(WorkerState *worker)
 
     worker->worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!worker->worker_stop_event)
+    {
         log_error(L"aw_start_workers: CreateEventW failed");
+        return 0;
+    }
 
     for (int i = 0; i < NUM_WORKERS; i++)
     {
         worker->worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, worker, 0, NULL);
         if (!worker->worker_threads[i])
+        {
             log_error(L"aw_start_workers: CreateThread failed for worker %d", i);
+            SetEvent(worker->worker_stop_event);
+            for (int j = 0; j < i; j++)
+            {
+                WaitForSingleObject(worker->worker_threads[j], INFINITE);
+                CloseHandle(worker->worker_threads[j]);
+                worker->worker_threads[j] = NULL;
+            }
+            CloseHandle(worker->worker_stop_event);
+            worker->worker_stop_event = NULL;
+            return 0;
+        }
     }
     return 1;
 }

@@ -216,13 +216,14 @@ static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
             }
         }
     }
-    // Common cleanup (rgba_data is the global decode buffer — don't free it)
+    // Common cleanup (rgba_data is now a per-request allocation, so free it)
     g_state.data.full_load_pending = 0;
     g_state.needs_redraw = 1;
     InvalidateRect(hwnd, NULL, TRUE);
     if (result)
     {
-        result->rgba_data = NULL;
+        if (result->rgba_data)
+            free(result->rgba_data);
         free(result);
     }
 }
