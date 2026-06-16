@@ -675,7 +675,8 @@ static void on_mousewheel(HWND hwnd, int delta)
     if (g_state.view.view_mode == VIEW_GALLERY)
     {
         float scroll_amount = (float) delta * 1.5F;
-        gal_scroll(&g_state.view, scroll_amount, &g_state.needs_redraw);
+        int ms = gal_max_scroll(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height);
+        gal_scroll(&g_state.view, scroll_amount, &g_state.needs_redraw, ms);
         InvalidateRect(hwnd, NULL, TRUE);
     }
     else
@@ -767,7 +768,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         {
             g_state.ui.dpi_scale = HIWORD(wParam) / 96.0F;
             gal_update_layout_scales(&g_state.ui);
-            gal_update_layout(&g_state.view, g_state.window_height);
+            gal_update_layout(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height);
             union
             {
                 LPARAM l;

@@ -80,15 +80,18 @@ int gal_handle_ui_click(DataState *data, ViewState *view, UIState *ui, int x, in
     return 0;
 }
 
-// gal_update_layout needs the full view state + max scroll info
-// inline version used by callers that have the data
-void gal_update_layout(ViewState *view, int window_height)
+void gal_update_layout(DataState *data, ViewState *view, UIState *ui, int window_width, int window_height)
 {
-    (void) view;
-    (void) window_height;
-    // max_scroll is now computed by caller, we just clamp
-    // This function is kept as a simple clamp helper
-    // Caller must call gal_max_scroll separately if needed
+    int ms = gal_max_scroll(data, view, ui, window_width, window_height);
+    if (view->scroll_target_y > (float) ms)
+        view->scroll_target_y = (float) ms;
+    if (view->scroll_current_y > (float) ms)
+        view->scroll_current_y = (float) ms;
+    if (view->view_mode == VIEW_FULLIMAGE)
+    {
+        gal_clamp_zoom_pan(view, window_width, window_height, ui->dpi_scale,
+                           ui->layout.topbar_height);
+    }
 }
 
 void gal_tick_smooth_scroll(ViewState *view, int window_height, double delta_time, int *needs_redraw)
@@ -107,12 +110,13 @@ void gal_tick_smooth_scroll(ViewState *view, int window_height, double delta_tim
     *needs_redraw = 1;
 }
 
-void gal_scroll(ViewState *view, float delta, int *needs_redraw)
+void gal_scroll(ViewState *view, float delta, int *needs_redraw, int max_scroll)
 {
     view->scroll_target_y -= delta;
-    // max_scroll needs to be computed by the caller
     if (view->scroll_target_y < 0.0F)
         view->scroll_target_y = 0.0F;
+    if (view->scroll_target_y > (float) max_scroll)
+        view->scroll_target_y = (float) max_scroll;
     *needs_redraw = 1;
 }
 

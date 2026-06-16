@@ -397,6 +397,228 @@ static void test_fullimage_info_toggle(void)
     PASS();
 }
 
+static void test_fullimage_prev_arrow(void)
+{
+    TEST("fullimage hit prev arrow -> moves selected_index");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.data.count = 5;
+    s.view.view_mode = VIEW_FULLIMAGE;
+    s.view.selected_index = 2;
+    s.ui.dpi_scale = 1.0F;
+    float strip_y = (float) s.window_height - 130.0F;
+    int nr = 0;
+    int r = gal_handle_fullimage_click(&s.data, &s.view, &s.ui, &s.gpu, &s.worker,
+                                        35, (int) strip_y + 50,
+                                        s.window_width, s.window_height, &nr, NULL);
+    CHECK(r == 1, "click prev handled");
+    CHECK(s.view.selected_index == 1, "selected_index 2 -> 1");
+    PASS();
+}
+
+static void test_fullimage_next_arrow(void)
+{
+    TEST("fullimage hit next arrow -> moves selected_index");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.data.count = 5;
+    s.view.view_mode = VIEW_FULLIMAGE;
+    s.view.selected_index = 2;
+    s.ui.dpi_scale = 1.0F;
+    float strip_y = (float) s.window_height - 130.0F;
+    int nr = 0;
+    int r = gal_handle_fullimage_click(&s.data, &s.view, &s.ui, &s.gpu, &s.worker,
+                                        (int) ((float) s.window_width - 35.0F), (int) strip_y + 50,
+                                        s.window_width, s.window_height, &nr, NULL);
+    CHECK(r == 1, "click next handled");
+    CHECK(s.view.selected_index == 3, "selected_index 2 -> 3");
+    PASS();
+}
+
+static void test_adaptive_load_threshold(void)
+{
+    TEST("large file sets full_load_pending, no-images fallback");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.data.count = 2;
+    s.ui.dpi_scale = 1.0F;
+
+    // Worker ring buffer must be initialized for aw_request_full_image
+    void *ring_storage[16];
+    rb_init(&s.worker.work_queue, ring_storage, 16);
+
+    ImageEntry *saved_images = (ImageEntry *) calloc(2, sizeof(ImageEntry));
+    s.data.images = saved_images;
+    s.data.images[1].path = L"large.jpg";
+    s.data.images[1].file_size = 10ULL * 1024ULL * 1024ULL; // 10MB — above threshold
+    s.data.images[1].full_width = 100; // prevent il_get_image_dimensions call
+    s.data.images[1].full_height = 100;
+    s.view.view_mode = VIEW_FULLIMAGE;
+    s.view.selected_index = 0;
+
+    // 1. Large file: full_load_pending set, no immediate load
+    s.data.full_load_pending = 0;
+    gal_select_full_image(&s.data, &s.view, &s.gpu, &s.worker, 1, NULL);
+    CHECK(s.data.full_load_pending == 1, "large file: pending flag set");
+
+    // 2. No images path (no GPU needed): pending flag set
+    s.data.full_load_pending = 0;
+    s.data.count = 1;
+    s.data.images = NULL;
+    gal_select_full_image(&s.data, &s.view, &s.gpu, &s.worker, 0, NULL);
+    CHECK(s.data.full_load_pending == 1, "no images: pending flag set");
+
+    free(saved_images);
+    rb_destroy(&s.worker.work_queue);
+    PASS();
+}
+
+// ── Suite: populate grid items ────────────────────────────────────────
+
+static void test_populate_grid_root(void)
+{
+    TEST("populate grid items in root folder");
+    // Create 5 images: 2 in subfolder "vacation", 1 in subfolder "work", 2 at root
+    // We use dummy wide strings that won't actually be accessed for file I/O
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.data.count = 5;
+    s.ui.dpi_scale = 1.0F;
+
+    // Mock viewing_dir / current_dir as different to avoid ".." parent entry
+    wcscpy(s.data.current_dir, L"C:\\photos");
+    wcscpy(s.data.viewing_dir, L"C:\\photos");
+
+    // Allocate arena for images
+    void *arena_buf = VirtualAlloc(NULL, ARENA_CAPACITY, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(arena_buf != NULL, "arena allocated");
+    arena_init(&s.data.arena, arena_buf, ARENA_CAPACITY);
+
+    // Allocate nav_arena
+    void *nav_arena_buf = VirtualAlloc(NULL, (SIZE_T) (2 * 1024 * 1024), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(nav_arena_buf != NULL, "nav_arena allocated");
+    arena_init(&s.data.nav_arena, nav_arena_buf, (size_t) (2 * 1024 * 1024));
+
+    // Set up images as arena-allocated copies
+    const wchar_t *paths[] = {
+        L"C:\\photos\\vacation\\img1.jpg",
+        L"C:\\photos\\vacation\\img2.jpg",
+        L"C:\\photos\\work\\img1.jpg",
+        L"C:\\photos\\job1.jpg",
+        L"C:\\photos\\job2.jpg",
+    };
+    s.data.images = (ImageEntry *) arena_alloc(&s.data.arena, 5 * sizeof(ImageEntry));
+    CHECK(s.data.images != NULL, "arena alloc for images array");
+    s.data.capacity = 5;
+    for (int i = 0; i < 5; i++)
+    {
+        size_t sz = (wcslen(paths[i]) + 1) * sizeof(wchar_t);
+        wchar_t *p = (wchar_t *) arena_alloc(&s.data.arena, sz);
+        CHECK(p != NULL, "arena alloc for path");
+        wcscpy(p, paths[i]);
+        s.data.images[i].path = p;
+        s.data.images[i].filename = wcsrchr(p, L'\\') + 1;
+        s.data.images[i].texture_slot = -1;
+        s.data.images[i].state = IMG_STATE_NEW;
+    }
+
+    // Allocate grid_items and strip_image_grid_indices
+    s.data.grid_item_capacity = (s.data.count * 2) + 256;
+    s.data.grid_items = arena_alloc_array(&s.data.arena, GridItem, s.data.grid_item_capacity);
+    s.data.strip_image_grid_indices = arena_alloc_array(&s.data.arena, int, s.data.grid_item_capacity);
+    CHECK(s.data.grid_items != NULL, "grid_items allocated");
+    CHECK(s.data.strip_image_grid_indices != NULL, "strip_image_grid_indices allocated");
+
+    app_populate_grid_items(&s.data);
+
+    // At root with viewing_dir == current_dir, no ".." entry
+    // Expected: 2 folders (vacation, work) + 2 direct images (job1.jpg, job2.jpg) = 4
+    CHECK(s.data.grid_item_count == 4,
+          "grid_item_count should be 4 at root");
+
+    // Folders first (sorted alphabetically), then direct images
+    CHECK(s.data.grid_items[0].type == ITEM_FOLDER, "item 0 folder");
+    CHECK(s.data.grid_items[1].type == ITEM_FOLDER, "item 1 folder");
+    CHECK(s.data.grid_items[2].type == ITEM_IMAGE, "item 2 is direct image");
+    CHECK(s.data.grid_items[3].type == ITEM_IMAGE, "item 3 is direct image");
+
+    // Strip count should include only direct images (not folder contents)
+    CHECK(s.data.strip_image_count == 2, "strip_image_count should be 2");
+    CHECK(s.data.strip_image_grid_indices[0] == 2, "strip idx 0 is grid idx 2");
+    CHECK(s.data.strip_image_grid_indices[1] == 3, "strip idx 1 is grid idx 3");
+
+    VirtualFree(arena_buf, 0, MEM_RELEASE);
+    VirtualFree(nav_arena_buf, 0, MEM_RELEASE);
+    PASS();
+}
+
+static void test_populate_grid_subdir(void)
+{
+    TEST("populate grid items in subfolder vacation");
+    AppState s = {0};
+    s.window_width = 1200;
+    s.window_height = 800;
+    s.data.count = 5;
+    s.ui.dpi_scale = 1.0F;
+
+    wcscpy(s.data.current_dir, L"C:\\photos");
+    wcscpy(s.data.viewing_dir, L"C:\\photos\\vacation");
+
+    void *arena_buf = VirtualAlloc(NULL, ARENA_CAPACITY, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(arena_buf != NULL, "arena allocated");
+    arena_init(&s.data.arena, arena_buf, ARENA_CAPACITY);
+
+    void *nav_arena_buf = VirtualAlloc(NULL, (SIZE_T) (2 * 1024 * 1024), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(nav_arena_buf != NULL, "nav_arena allocated");
+    arena_init(&s.data.nav_arena, nav_arena_buf, (size_t) (2 * 1024 * 1024));
+
+    const wchar_t *paths[] = {
+        L"C:\\photos\\vacation\\img1.jpg",
+        L"C:\\photos\\vacation\\img2.jpg",
+        L"C:\\photos\\work\\img1.jpg",
+        L"C:\\photos\\job1.jpg",
+        L"C:\\photos\\job2.jpg",
+    };
+    s.data.images = (ImageEntry *) arena_alloc(&s.data.arena, 5 * sizeof(ImageEntry));
+    s.data.capacity = 5;
+    for (int i = 0; i < 5; i++)
+    {
+        size_t sz = (wcslen(paths[i]) + 1) * sizeof(wchar_t);
+        wchar_t *p = (wchar_t *) arena_alloc(&s.data.arena, sz);
+        wcscpy(p, paths[i]);
+        s.data.images[i].path = p;
+        s.data.images[i].filename = wcsrchr(p, L'\\') + 1;
+        s.data.images[i].texture_slot = -1;
+        s.data.images[i].state = IMG_STATE_NEW;
+    }
+
+    s.data.grid_item_capacity = (s.data.count * 2) + 256;
+    s.data.grid_items = arena_alloc_array(&s.data.arena, GridItem, s.data.grid_item_capacity);
+    s.data.strip_image_grid_indices = arena_alloc_array(&s.data.arena, int, s.data.grid_item_capacity);
+
+    app_populate_grid_items(&s.data);
+
+    // Should have: .. + 2 images = 3 items
+    CHECK(s.data.grid_item_count == 3,
+          "grid_item_count should be 3 in subfolder");
+
+    CHECK(s.data.grid_items[0].type == ITEM_FOLDER, "item 0 is folder ..");
+    CHECK(wcscmp(s.data.grid_items[0].folder_name, L"..") == 0, "folder name ..");
+
+    CHECK(s.data.grid_items[1].type == ITEM_IMAGE, "item 1 is direct image");
+
+    CHECK(s.data.strip_image_count == 2,
+          "strip_image_count should be 2 in subfolder");
+
+    VirtualFree(arena_buf, 0, MEM_RELEASE);
+    VirtualFree(nav_arena_buf, 0, MEM_RELEASE);
+    PASS();
+}
+
 // ── Suite: zoom ────────────────────────────────────────────────────────
 
 static void test_zoom_clamp(void)
@@ -653,6 +875,12 @@ int main(void)
 
     test_fullimage_back();
     test_fullimage_info_toggle();
+    test_fullimage_prev_arrow();
+    test_fullimage_next_arrow();
+    test_adaptive_load_threshold();
+
+    test_populate_grid_root();
+    test_populate_grid_subdir();
 
     test_eviction();
 

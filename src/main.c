@@ -203,6 +203,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
 
         gal_tick_smooth_scroll(&g_state.view, g_state.window_height, g_state.delta_time, &g_state.needs_redraw);
+        gal_update_layout(&g_state.data, &g_state.view, &g_state.ui, g_state.window_width, g_state.window_height);
 
         if (g_state.view.view_mode == VIEW_FULLIMAGE && g_state.view.zoom_ui_timer > 0.0F)
         {

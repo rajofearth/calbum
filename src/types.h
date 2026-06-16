@@ -618,8 +618,8 @@ int gal_handle_ui_click(DataState *data, ViewState *view, UIState *ui, int x, in
 int gal_handle_fullimage_click(DataState *data, ViewState *view, UIState *ui, GpuState *r, WorkerState *worker, int x,
                                int y, int window_width, int window_height, int *needs_redraw, HWND hwnd);
 void gal_apply_sort(DataState *data, ViewState *view);
-void gal_scroll(ViewState *view, float delta, int *needs_redraw);
-void gal_update_layout(ViewState *view, int window_height);
+void gal_scroll(ViewState *view, float delta, int *needs_redraw, int max_scroll);
+void gal_update_layout(DataState *data, ViewState *view, UIState *ui, int window_width, int window_height);
 void gal_update_layout_scales(UIState *ui);
 void gal_open_full(ViewState *view, int index);
 void gal_close_full(ViewState *view, GpuState *r, int *needs_redraw);
