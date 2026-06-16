@@ -12,6 +12,8 @@
 // shader_src is defined in shader.c (included before device.c in build order)
 extern const char *shader_src;
 
+#ifndef CALBUM_TEST_BUILD
+
 int r_init(GpuState *r, TextState *txt, HWND hwnd)
 {
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
@@ -421,3 +423,5 @@ void r_copy_backbuffer_for_blur(GpuState *r)
             r->d3d_context->lpVtbl->GenerateMips(r->d3d_context, r->blur_srv);
     }
 }
+
+#endif /* CALBUM_TEST_BUILD */

@@ -43,6 +43,30 @@
 #include "src/asset_worker.c"
 #include "src/app.c"
 
+// ── GPU stubs (device.c is excluded under CALBUM_TEST_BUILD) ───────────
+#ifdef CALBUM_TEST_BUILD
+void r_clear(GpuState *r_, float r, float g, float b)
+{
+    (void) r_;
+    (void) r;
+    (void) g;
+    (void) b;
+}
+void r_clear_theme(GpuState *r, const float bg[4])
+{
+    (void) r;
+    (void) bg;
+}
+void r_present(GpuState *r)
+{
+    r->tex_pool.frame_counter++;
+}
+void r_copy_backbuffer_for_blur(GpuState *r)
+{
+    (void) r;
+}
+#endif
+
 // ── Test framework ──────────────────────────────────────────────────────
 static int g_run = 0, g_pass = 0, g_fail = 0;
 
@@ -441,6 +465,160 @@ static void test_select_full_image_reset(void)
     PASS();
 }
 
+// ── Suite: ring buffer concurrency ────────────────────────────────────
+
+typedef struct
+{
+    RingBuffer *rb;
+    int result;
+} PopArg;
+
+static DWORD WINAPI rb_push_thread_fn(LPVOID arg)
+{
+    RingBuffer *rb = (RingBuffer *) arg;
+    for (int i = 0; i < 1000;)
+    {
+        if (rb_push(rb, (void *) (uintptr_t) (i + 1)))
+            i++;
+        else
+            Sleep(0);
+    }
+    return 0;
+}
+
+static DWORD WINAPI rb_pop_thread_fn(LPVOID arg)
+{
+    PopArg *pa = (PopArg *) arg;
+    int count = 0;
+    while (count < 1000)
+    {
+        if (rb_try_pop(pa->rb))
+            count++;
+        else
+            Sleep(0);
+    }
+    pa->result = count;
+    return 0;
+}
+
+static void test_ring_buffer_concurrent(void)
+{
+    TEST("ring buffer concurrent push/pop with 2+2 threads");
+
+    RingBuffer rb;
+    void *storage[256];
+    rb_init(&rb, storage, 256);
+
+    PopArg pa1 = {&rb, 0};
+    PopArg pa2 = {&rb, 0};
+
+    HANDLE threads[4];
+    threads[0] = CreateThread(NULL, 0, rb_push_thread_fn, &rb, 0, NULL);
+    threads[1] = CreateThread(NULL, 0, rb_push_thread_fn, &rb, 0, NULL);
+    threads[2] = CreateThread(NULL, 0, rb_pop_thread_fn, &pa1, 0, NULL);
+    threads[3] = CreateThread(NULL, 0, rb_pop_thread_fn, &pa2, 0, NULL);
+
+    CHECK(threads[0] != NULL, "push thread 1 created");
+    CHECK(threads[1] != NULL, "push thread 2 created");
+    CHECK(threads[2] != NULL, "pop thread 1 created");
+    CHECK(threads[3] != NULL, "pop thread 2 created");
+
+    WaitForMultipleObjects(4, threads, TRUE, INFINITE);
+
+    for (int i = 0; i < 4; i++)
+        CloseHandle(threads[i]);
+
+    CHECK(pa1.result + pa2.result == 2000, "total popped items == 2000");
+
+    // ── Boundary: full / empty ──
+    RingBuffer rb2;
+    void *storage2[16];
+    rb_init(&rb2, storage2, 16);
+
+    int filled = 0;
+    while (rb_push(&rb2, (void *) (uintptr_t) (filled + 1)))
+        filled++;
+    CHECK(filled == 15, "ring buffer filled to capacity-1");
+    CHECK(rb_push(&rb2, (void *) (uintptr_t) 999) == 0, "rb_push returns 0 when full");
+
+    int popped = 0;
+    while (rb_try_pop(&rb2))
+        popped++;
+    CHECK(popped == 15, "all items popped back");
+    CHECK(rb_try_pop(&rb2) == NULL, "rb_try_pop returns NULL when empty");
+
+    rb_destroy(&rb2);
+    rb_destroy(&rb);
+    PASS();
+}
+
+// ── Suite: image loader WIC init, decode, error paths ────────────────
+
+static void test_image_loader_wic(void)
+{
+    TEST("image loader WIC init, decode, and error paths");
+
+    // Initialize COM for WIC
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    int com_active = SUCCEEDED(hr);
+
+    // 1. Init WIC
+    int wic_ok = il_init_wic();
+    CHECK(wic_ok != 0, "il_init_wic succeeds");
+
+    // 2. Error path: nonexistent file returns NULL
+    int out_size = 0;
+    void *result = il_load_and_compress(L"Z:\\__calbum_test_nonexistent__.png", 32, &out_size);
+    CHECK(result == NULL, "il_load_and_compress with bogus path returns NULL");
+
+    // 3. Positive path: create a 1x1 red BMP, load and compress
+    wchar_t temp_dir[MAX_PATH];
+    wchar_t temp_file[MAX_PATH];
+    DWORD dret = GetTempPathW(MAX_PATH, temp_dir);
+    CHECK(dret > 0 && dret < MAX_PATH, "GetTempPathW succeeds");
+    dret = GetTempFileNameW(temp_dir, L"cbt", 0, temp_file);
+    CHECK(dret != 0, "GetTempFileNameW succeeds");
+
+    BITMAPFILEHEADER bfh;
+    BITMAPINFOHEADER bih;
+    uint8_t pixels[4] = {0x00, 0x00, 0xFF, 0x00}; // BGR red + row padding
+
+    memset(&bfh, 0, sizeof(bfh));
+    bfh.bfType = 0x4D42;
+    bfh.bfSize = sizeof(bfh) + sizeof(bih) + sizeof(pixels);
+    bfh.bfOffBits = sizeof(bfh) + sizeof(bih);
+
+    memset(&bih, 0, sizeof(bih));
+    bih.biSize = sizeof(bih);
+    bih.biWidth = 1;
+    bih.biHeight = 1;
+    bih.biPlanes = 1;
+    bih.biBitCount = 24;
+
+    HANDLE hFile = CreateFileW(temp_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    CHECK(hFile != INVALID_HANDLE_VALUE, "CreateFileW for temp BMP succeeds");
+
+    DWORD written;
+    WriteFile(hFile, &bfh, sizeof(bfh), &written, NULL);
+    WriteFile(hFile, &bih, sizeof(bih), &written, NULL);
+    WriteFile(hFile, pixels, sizeof(pixels), &written, NULL);
+    CloseHandle(hFile);
+
+    out_size = 0;
+    result = il_load_and_compress(temp_file, 32, &out_size);
+    CHECK(result != NULL, "il_load_and_compress with valid BMP returns non-NULL");
+    CHECK(out_size > 0, "compressed output size > 0");
+
+    free(result);
+    DeleteFileW(temp_file);
+
+    il_shutdown_wic();
+    if (com_active)
+        CoUninitialize();
+
+    PASS();
+}
+
 // ── Main runner ────────────────────────────────────────────────────────
 
 int main(void)
@@ -481,6 +659,9 @@ int main(void)
     test_full_cache_eviction();
 
     test_select_full_image_reset();
+
+    test_ring_buffer_concurrent();
+    test_image_loader_wic();
 
     printf("\n");
     printf("========================================\n");

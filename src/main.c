@@ -76,6 +76,38 @@ static int image_select_offset(AppState *s, int delta)
     {
         s->view.selected_index = new_idx;
         s->needs_redraw = 1;
+
+        // ── Nudge scroll if cell not 100% visible ───────────────────────
+        float dpi = s->ui.dpi_scale > 0.0F ? s->ui.dpi_scale : 1.0F;
+        float thumb_size = 160.0F * dpi;
+        float thumb_padding = s->ui.layout.grid_gap > 0.0F ? s->ui.layout.grid_gap : 8.0F * dpi;
+        int pad = (int) (thumb_size + thumb_padding);
+        if (pad < 1)
+            pad = 1;
+        int cols = (int) (((float) s->window_width - s->ui.layout.panel_padding) / (float) pad);
+        if (cols < 1)
+            cols = 1;
+
+        int row = new_idx / cols;
+        float topbar_h = s->ui.layout.topbar_height > 0.0F ? s->ui.layout.topbar_height : 0.0F;
+        float gp = s->ui.layout.panel_padding > 0.0F ? s->ui.layout.panel_padding : 16.0F * dpi;
+        float sc = s->view.scroll_current_y;
+
+        // Screen position of the cell's top and bottom edges
+        float cell_screen_top = topbar_h + gp + (float) (row * pad) - sc;
+        float cell_screen_bot = cell_screen_top + thumb_size;
+
+        if (cell_screen_top < 0.0F || cell_screen_bot > (float) s->window_height)
+        {
+            // Cell clipped — nudge scroll by ~3 rows in movement direction
+            float target_y = s->view.scroll_target_y + (float) (delta * 3 * pad);
+            int max_s = gal_max_scroll(&s->data, &s->view, &s->ui, s->window_width, s->window_height);
+            if (target_y < 0.0F)
+                target_y = 0.0F;
+            if ((int) target_y > max_s)
+                target_y = (float) max_s;
+            s->view.scroll_target_y = target_y;
+        }
         return 1;
     }
     return 0;
@@ -609,7 +641,6 @@ static void on_keydown(HWND hwnd, int vk)
                 if (image_select_offset(&g_state, 1))
                     InvalidateRect(hwnd, NULL, TRUE);
                 break;
-
             default:
                 break;
         }
@@ -911,6 +942,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 // ─────────────────────────────────────────────────────────────────────────
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────
+#ifndef CALBUM_TEST_BUILD
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, // NOLINT(readability-non-const-parameter)
                    int nShowCmd)
@@ -1071,3 +1103,4 @@ exit_loop:
     app_shutdown(&g_state, &g_state.gpu, &g_state.txt);
     return (int) msg.wParam;
 }
+#endif /* CALBUM_TEST_BUILD */

@@ -35,7 +35,7 @@ test:
 	$(CC) tests/test_main.c -o tests/build/test_runner \
 		-g -O0 -Wall -Wextra \
 		$(LDFLAGS) -lshlwapi \
-		-I.
+		-I. -DCALBUM_TEST_BUILD
 	./tests/build/test_runner
 
 format:
