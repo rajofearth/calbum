@@ -1,6 +1,7 @@
 # calbum — Master Audit Synthesis & Implementation Plan
 
 **Generated:** 2026-06-16
+**Last revised:** 2026-06-16 — statuses reconciled against current codebase
 **Source audits:** Security, Architecture, Performance/GPU, UX, Code Quality (5 reports)
 **Scope:** ~115 unique findings across 14 source files, compressed and deduplicated below
 
@@ -19,7 +20,7 @@ Each item below is a concrete, ordered implementation step. Items are grouped in
 
 Tags: `BUG` = crash/wrong behavior, `SEC` = security hardening, `PERF` = performance optimization, `UX` = usability improvement, `ARCH` = structural improvement, `CQ` = code quality.
 
-**Status markers:** `✅ DONE` = completed and verified, blank = pending.
+**Status markers:** `✅ DONE` = completed and verified, `❌ NOT DONE` = not implemented, `⏭️ SKIPPED` = evaluated and consciously deferred, `⚠️` = partial completion.
 
 ---
 
@@ -31,7 +32,7 @@ These are the highest priority: they can crash the program, cause data races, or
 
 ### 1.1 [BUG] Guard division by zero in thumbnail decoder ✅ DONE
 
-**Files:** `src/image_loader.c:55-72`
+**Files:** `lib/image/loader.c:55-72`
 
 **What:** `il_load_and_compress` divides by `w` or `h` without checking for zero. A corrupt image with reported dimensions `0×0` causes `EXCEPTION_INT_DIVIDE_BY_ZERO` (process crash).
 
@@ -72,17 +73,17 @@ These are the highest priority: they can crash the program, cause data races, or
 
 ### 1.4 [SEC] Extend worker shutdown timeout to INFINITE ✅ DONE
 
-**Files:** `src/asset_worker.c:139-146`, `src/file_monitor.c:141`
+**Files:** `src/asset_worker.c:139-146`, `lib/fs/monitor.c`
 
 **What:** `WaitForSingleObject(s->worker_threads[i], 2000)` uses a 2-second timeout. If a worker is stuck in WIC I/O, the main thread proceeds to close handles and call `il_shutdown_wic()` while the worker still runs — a use-after-free (see finding 1.5).
 
 **How:**
 - Changed `WaitForSingleObject(s->worker_threads[i], 2000)` to `WaitForSingleObject(s->worker_threads[i], INFINITE)` in `asset_worker.c`.
-- Changed `WaitForSingleObject(s->monitor_thread, 2000)` to `WaitForSingleObject(s->monitor_thread, INFINITE)` in `file_monitor.c` (done together with 1.5 since both modify `fm_stop_monitor`).
+- Changed `WaitForSingleObject(s->monitor_thread, 2000)` to `WaitForSingleObject(s->monitor_thread, INFINITE)` in `lib/fs/monitor.c` (done together with 1.5 since both modify `fm_stop_monitor`).
 
 ### 1.5 [SEC] Fix fm_stop_monitor handle close ordering ✅ DONE
 
-**Files:** `src/file_monitor.c:117-151`
+**Files:** `lib/fs/monitor.c:117-151`
 
 **What:** `CloseHandle(dir_handle)` is called before waiting for the monitor thread to exit. The thread may still be executing inside `ReadDirectoryChangesW`.
 
@@ -96,7 +97,7 @@ These are the highest priority: they can crash the program, cause data races, or
 
 ### 1.6 [BUG] Fix wcsncpy fragility in file_scanner.c ✅ DONE
 
-**Files:** `src/file_scanner.c:41, 55, 78`
+**Files:** `lib/fs/scanner.c:41, 55, 78`
 
 **What:** The chained `wcsncpy(...)[...] = L'\0'` pattern is correct but fragile.
 
@@ -114,7 +115,7 @@ These are the highest priority: they can crash the program, cause data races, or
 
 ### 1.7 [BUG] Add NULL check for shader compile blobs ✅ DONE
 
-**Files:** `src/renderer.c:168-202`
+**Files:** `lib/gpu/shader.c`
 
 **What:** `vs_blob` and `ps_blob` can be NULL if `D3DCompile` fails. The code calls `Release` on them without NULL checks.
 
@@ -137,24 +138,24 @@ These are the highest priority: they can crash the program, cause data races, or
 | Item | Original Scope | Actual Scope | Reason |
 |---|---|---|---|
 | 1.2 | `gallery_fullimage.c` only | `gallery_fullimage.c`, `gallery.c`, `types.h` | Moved `MAX_INSTANCES` to shared header; updated existing `gallery.c` guard to use it |
-| 1.4 | `asset_worker.c` only | `asset_worker.c` + `file_monitor.c` | Same pattern in both files; 1.4 and 1.5 were combined into one subagent |
-| 1.6 | 1 line (`file_scanner.c:41`) | 3 lines (41, 55, 78) | Same chained pattern exists at 3 sites in the file — fixed all for consistency |
+| 1.4 | `asset_worker.c` only | `asset_worker.c` + `lib/fs/monitor.c` | Same pattern in both files; 1.4 and 1.5 were combined into one subagent |
+| 1.6 | 1 line (`lib/fs/scanner.c:41`) | 3 lines (41, 55, 78) | Same chained pattern exists at 3 sites in the file — fixed all for consistency |
 
 ### Cross-Cutting Observations
 1. **Same `wcsncpy` chained pattern in `asset_worker.c:160`** — not in scope but could be fixed in a future pass.
-2. **`D2D brush leak` (audit L-08)** in `renderer.c:587-589,622-632` remains untouched, deferred from Pass 1.
-3. **Item 1.4 and 1.5 must always be paired** — they both modify `fm_stop_monitor` in `file_monitor.c`. Any future work on that function should account for both timeout and handle ordering.
+2. **`D2D brush leak` (audit L-08)** in `lib/gpu/d2d.c` remains untouched, deferred from Pass 1.
+3. **Item 1.4 and 1.5 must always be paired** — they both modify `fm_stop_monitor` in `lib/fs/monitor.c`. Any future work on that function should account for both timeout and handle ordering.
 4. **All changes are correctness-only** — no functional additions, no new features. Pass 1 strictly fixes bugs and security holes.
 
 ---
 
-## Pass 2 — UI Freezes & Performance Bottlenecks
+## Pass 2 — UI Freezes & Performance Bottlenecks ✅ DONE
 
 These are the biggest impacts on user experience: frame freezes, unresponsive window, and GPU thrashing.
 
 ### 2.1 [UX/PERF] Move full-image WIC decode off main thread ✅ DONE
 
-**Files:** `src/types.h`, `src/asset_worker.c`, `src/gallery_fullimage.c:8-51,69-557`, `src/main.c`, `src/image_loader.c` (noted: static decode buffer)
+**Files:** `src/types.h`, `src/asset_worker.c`, `src/gallery_fullimage.c:8-51,69-557`, `src/main.c`, `lib/image/loader.c` (noted: static decode buffer)
 
 **What:** `r_load_full_image()` calls `il_load_full_image()` synchronously on the main thread, blocking rendering for 100-500+ms while JPEG/RAW decompression happens. This is the single biggest performance issue.
 
@@ -181,7 +182,7 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 
 ### 2.2 [PERF] Cache D2D brush and use single BeginDraw/EndDraw per frame ✅ DONE
 
-**Files:** `src/renderer.c:579-604, 606-636`, `src/gallery.c`, `src/gallery_fullimage.c`
+**Files:** `lib/gpu/d2d.c`, `src/gallery.c`, `src/gallery_fullimage.c`
 
 **What:** `CreateSolidColorBrush` is called 10-15 times per frame. Each text call opens its own `BeginDraw`/`EndDraw`, flushing the D2D command buffer.
 
@@ -197,7 +198,7 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 
 ### 2.3 [PERF] Cache IDWriteTextLayout for static strings ✅ DONE
 
-**Files:** `src/renderer.c:610-636, 910-930`, `src/gallery.c`, `src/gallery_fullimage.c`
+**Files:** `lib/gpu/d2d.c`, `src/gallery.c`, `src/gallery_fullimage.c`
 
 **What:** A new `IDWriteTextLayout` is created for every text draw call. This involves Unicode shaping, line breaking, and font fallback.
 
@@ -216,12 +217,12 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 
 ### 2.4 [UX/PERF] Make directory scan asynchronous with progress feedback ✅ DONE
 
-**Files:** `src/file_scanner.c`, `src/app.c:130`, `src/main.c`, `src/types.h`
+**Files:** `lib/fs/scanner.c`, `src/app.c:130`, `src/main.c`, `src/types.h`
 
 **What:** The recursive `FindFirstFileW`/`FindNextFileW` scan runs synchronously on the main thread. For folders with thousands of images, the window freezes.
 
 **How:**
-1. Create a new background thread function in `file_scanner.c`:
+1. Create a new background thread function in `lib/fs/scanner.c`:
    ```c
    DWORD WINAPI fs_scan_thread(LPVOID param)
    ```
@@ -243,7 +244,7 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 
 ### 2.5 [PERF] Add reverse mapping for texture slot eviction ✅ DONE
 
-**Files:** `src/renderer.c:471-488`
+**Files:** `lib/gpu/texture.c`
 
 **What:** `r_evict_texture` scans all images linearly to find which one owns a given slot — O(N) per eviction.
 
@@ -326,19 +327,19 @@ These are mechanical refactors with no behavior change but big readability/maint
 
 ### 3.1 [ARCH] Extract strip window layout math into shared function ✅ DONE
 
-**Files touched:** `src/gallery_fullimage.c`, `src/renderer.c`, `src/types.h`
+**Files touched:** `src/gallery_fullimage.c`, `lib/gpu/fullimage.c`, `src/types.h`
 
-**What:** The same 30-line block of strip thumbnail bounds computation appeared 5 times across gallery_fullimage.c and renderer.c (one undocumented duplication in `gal_handle_fullimage_click`).
+**What:** The same 30-line block of strip thumbnail bounds computation appeared 5 times across gallery_fullimage.c and lib/gpu/fullimage.c (one undocumented duplication in `gal_handle_fullimage_click`).
 
 **How:**
 1. Added `fiv_strip_bounds()` in `gallery_fullimage.c` — computes visible strip thumbnail range from active index and total count.
-2. Added `fiv_is_in_strip()` in `gallery_fullimage.c` — checks if a given image path is in the visible strip. Placed in `gallery_fullimage.c` (not `renderer.c` as originally planned) because it needs access to `strip_image_grid_indices`.
+2. Added `fiv_is_in_strip()` in `gallery_fullimage.c` — checks if a given image path is in the visible strip. Placed in `gallery_fullimage.c` (not `lib/gpu/fullimage.c` as originally planned) because it needs access to `strip_image_grid_indices`.
 3. Replaced all 5 duplication sites with shared function calls, removing ~180 lines of duplicated code.
-4. **Bonus:** `r_alloc_full_image_slot` in `renderer.c` was simplified from a 70-line nested-loop scan to an 8-line `fiv_is_in_strip` call.
+4. **Bonus:** `r_alloc_full_image_slot` in `lib/gpu/fullimage.c` was simplified from a 70-line nested-loop scan to an 8-line `fiv_is_in_strip` call.
 
 ### 3.2 [ARCH] Add SAFE_RELEASE macro for COM cleanup ✅ DONE
 
-**Files touched:** `src/types.h`, `src/renderer.c`
+**Files touched:** `src/types.h`, `lib/gpu/device.c`
 
 **What:** `r_shutdown` was 82 lines with ~38 identical `if (p) { p->lpVtbl->Release(p); p = NULL; }` triplets.
 
@@ -356,7 +357,7 @@ These are mechanical refactors with no behavior change but big readability/maint
 **How:**
 - `get_pictures_folder` → `app_get_pictures_folder` (definition in app.c, declaration in types.h, call site in main.c)
 - `get_parent_dir` → `app_get_parent_dir` (definition in app.c, declaration in types.h, call sites in app.c and main.c)
-- **Scope note:** `gallery_fullimage.c` was listed as affected in the original plan but doesn't call either function. `src/utils.c/h` was also listed but not relevant.
+- **Scope note:** `gallery_fullimage.c` was listed as affected in the original plan but doesn't call either function. `lib/core/utils.c`/`lib/core/utils.h` was also listed but not relevant.
 
 ### 3.4 [CQ] Add const to read-only AppState* parameters ✅ DONE
 
@@ -409,8 +410,8 @@ These are mechanical refactors with no behavior change but big readability/maint
 | Item | Original Scope | Actual Scope | Reason |
 |---|---|---|---|
 | 3.1 | 4 duplication sites | 5 sites (4 documented + 1 in `gal_handle_fullimage_click`) | Click handler had the same bounds math undocumented |
-| 3.1 | `fiv_is_in_strip` in `renderer.c` | `fiv_is_in_strip` in `gallery_fullimage.c` | Needs access to `strip_image_grid_indices` — data lives in gallery_fullimage.c |
-| 3.3 | `src/utils.c/h`, `gallery_fullimage.c` affected | Neither file was actually affected | Neither function is called from those files |
+| 3.1 | `fiv_is_in_strip` in `lib/gpu/fullimage.c` | `fiv_is_in_strip` in `gallery_fullimage.c` | Needs access to `strip_image_grid_indices` — data lives in gallery_fullimage.c |
+| 3.3 | `lib/core/utils.c`/`lib/core/utils.h`, `gallery_fullimage.c` affected | Neither file was actually affected | Neither function is called from those files |
 | 3.4 | 6 functions, ~20 signatures | 3 functions (layout.c only) | Only `gal_calc_layout`, `gal_max_scroll`, `gal_hit_test` are truly read-only; the other 3 write through `AppState*` |
 | 3.5 | 10 helpers | 11 helpers (6 for fullimage, 5 for gallery) | Multiple small helpers were cleaner than fewer large ones |
 
@@ -432,7 +433,7 @@ These are mechanical refactors with no behavior change but big readability/maint
 
 ---
 
-### 4.1 [UX] Render empty state with guidance message
+### 4.1 [UX] Render empty state with guidance message ✅ DONE
 
 **Files:** `src/gallery.c:578-596` (gal_render_gallery)
 
@@ -479,7 +480,7 @@ Note: The top bar is drawn via `gal_render_topbar(s, instances, &inst_count)` �
 
 ---
 
-### 4.2 [UX] Use IMG_STATE_FAILED to show broken-image indicator
+### 4.2 [UX] Use IMG_STATE_FAILED to show broken-image indicator ✅ DONE
 
 **Files:** `src/main.c:152-191` (on_thumb_complete), `src/gallery.c:206-245` (gal_render_grid_thumbnails)
 
@@ -532,7 +533,7 @@ if (s->data.images[img_idx].state == IMG_STATE_FAILED)
 
 ---
 
-### 4.3 [UX] Fix Home/End scroll sync
+### 4.3 [UX] Fix Home/End scroll sync ❌ NOT DONE
 
 **Files:** `src/main.c:591-602` (on_keydown, gallery branch)
 
@@ -561,7 +562,7 @@ case VK_END:
 
 ---
 
-### 4.4 [UX] Implement scrollbar track click
+### 4.4 [UX] Implement scrollbar track click ✅ DONE
 
 **Files:** `src/main.c:636-645` (on_lbutton_down, gallery branch)
 
@@ -612,7 +613,7 @@ if ((float)x >= track_x && (float)x < track_x + track_w)
 
 ---
 
-### 4.5 [UX] Add thumbnail loading indicator
+### 4.5 [UX] Add thumbnail loading indicator ⏭️ SKIPPED
 
 **Files:** `src/gallery.c:228-244` (gal_render_grid_thumbnails), `src/gallery_fullimage.c` (strip thumbnails)
 
@@ -650,7 +651,7 @@ For the full-image bottom strip (`gallery_fullimage.c`), keep the original `text
 
 ---
 
-### 4.6 [UX] Truncate window title to leaf name only
+### 4.6 [UX] Truncate window title to leaf name only ✅ DONE
 
 **Files:** `src/app.c:197-203` (app_update_title)
 
@@ -673,7 +674,7 @@ void app_update_title(AppState *s)
 
 ---
 
-### 4.7 [UX] Cache breadcrumb formatted string to avoid recomputation
+### 4.7 [UX] Cache breadcrumb formatted string to avoid recomputation ✅ DONE
 
 **Files:** `src/gallery.c:471-551` (gal_render_topbar)
 
@@ -727,9 +728,43 @@ r_draw_text_aligned(s, cached_display_parent,
 
 ---
 
+## Pass 4 Completion Notes
+
+**Date:** 2026-06-16
+**Execution:** Items implemented individually; deferred items remain open
+
+### Status Summary
+| Item | Title | Status |
+|---|---|---|
+| 4.1 | Render empty state with guidance message | ✅ DONE |
+| 4.2 | Use IMG_STATE_FAILED to show broken-image indicator | ✅ DONE |
+| 4.3 | Fix Home/End scroll sync | ❌ NOT DONE |
+| 4.4 | Implement scrollbar track click | ✅ DONE |
+| 4.5 | Add thumbnail loading indicator | ⏭️ SKIPPED |
+| 4.6 | Truncate window title to leaf name only | ✅ DONE |
+| 4.7 | Cache breadcrumb formatted string to avoid recomputation | ✅ DONE |
+
+### What was completed
+- **4.1** — Empty folder now shows "No images here — drop a folder to browse" guidance message with top bar and breadcrumb, replacing the previous blank canvas.
+- **4.2** — `IMG_STATE_FAILED` is now set in `on_thumb_complete` when WIC decode fails, and a warning icon (⚠) is rendered over the thumbnail slot via D2D.
+- **4.4** — Clicking the scrollbar track above/below the thumb now pages up/down, matching standard Windows scrollbar behavior.
+- **4.6** — `app_update_title` uses `wcsrchr` to show only the leaf folder name, eliminating full-path privacy disclosure in the window title bar.
+- **4.7** — The breadcrumb `display_parent` string is cached alongside the width measurement, avoiding redundant `swprintf` formatting on every frame.
+
+### What was deferred
+- **4.3 (NOT DONE)** — `VK_HOME`/`VK_END` key handling in `on_keydown` does not adjust `scroll_target_y`. The selection moves off-screen. Still needs implementation.
+- **4.5 (SKIPPED)** — A pulsing thumbnail loading indicator (`TOKEN_PANEL`) was prototyped but reverted. The current behavior (dark `TOKEN_DEFAULT` panel until loaded, plus the warning icon on failure from 4.2) is the intentional design choice. The pulsing added visual noise without meaningful user feedback.
+
+### Cross-Cutting Observations
+1. **D2D BeginDraw discipline:** The `IMG_STATE_FAILED` rendering (4.2) requires its own `BeginDraw`/`EndDraw` pair inside the thumbnail render loop (which is D3D-only). Nested D2D drawing is safe as long as pairs are properly matched, but any future work on the thumbnail renderer should keep this constraint in mind.
+2. **Sub-struct field paths:** The codebase delta note at the top of Pass 4 was updated to reflect the AppState decomposition (commit `317dd61`). All code samples use the correct sub-struct paths (`s->data.images`, `s->ui.theme`, `s->txt.d2d_rtv`, etc.).
+3. **4.5 reversion:** The thumbnail loading indicator was explicitly reverted rather than left incomplete. The current state (dark panel until loaded + warning icon on failure) is the deliberate UX choice after testing both approaches.
+
+---
+
 ## Pass 5 — Deeper Architecture & Maintainability
 
-### 5.1 [ARCH] Decompose AppState into sub-structs
+### 5.1 [ARCH] Decompose AppState into sub-structs ✅ DONE
 
 **Files:** `src/types.h`, then cascading changes to all `.c` files
 
@@ -756,9 +791,9 @@ This is the largest single refactor. Do it incrementally:
 
 Each sub-struct extraction can be done as a separate commit. Start with `RenderState` (easiest — well-isolated).
 
-### 5.2 [ARCH] Extract full-image cache management from renderer
+### 5.2 [ARCH] Extract full-image cache management from renderer ❌ NOT DONE
 
-**Files:** `src/renderer.c:716-908` → new file `src/renderer_cache.c`
+**Files:** `lib/gpu/fullimage.c` (cache management still here; extraction to `src/renderer_cache.c` not done)
 
 **What:** The full-image cache management (~192 lines) is mixed with D3D11 setup code in renderer.c (930 lines, close to the 1000-line limit).
 
@@ -772,14 +807,14 @@ Each sub-struct extraction can be done as a separate commit. Start with `RenderS
 - Add `#include "src/renderer_cache.c"` in `build.c` after `renderer.c`
 - Declare one shared function boundary function in `renderer.c` if needed
 
-### 5.3 [ARCH] Add systematic error logging
+### 5.3 [ARCH] Add systematic error logging ✅ DONE
 
-**Files:** New file `src/logger.c`, plus edits throughout codebase
+**Files:** New file `lib/core/logger.c`, plus edits throughout codebase
 
 **What:** Most failures (arena exhaustion, D3D resource creation, WIC decode failure) are silent.
 
 **How:**
-- Create `src/logger.c`:
+- Create `lib/core/logger.c`:
   ```c
   #include "types.h"
   #include <stdio.h>
@@ -802,6 +837,33 @@ Each sub-struct extraction can be done as a separate commit. Start with `RenderS
 
 ---
 
+## Pass 5 Completion Notes
+
+**Date:** 2026-06-16
+**Execution:** 2 of 3 items completed; 1 deferred
+
+### Status Summary
+| Item | Title | Status |
+|---|---|---|
+| 5.1 | Decompose AppState into sub-structs | ✅ DONE |
+| 5.2 | Extract full-image cache management from renderer | ❌ NOT DONE |
+| 5.3 | Add systematic error logging | ✅ DONE |
+
+### Scope Changes (vs. original plan)
+
+- **5.1** — The original plan proposed extracting a single `RenderState` sub-struct incrementally. The actual implementation created **6 sub-structs** in `src/types.h`: `GpuState` (GPU/D3D/D2D/DWrite), `TextState` (DWrite text formats and layouts), `ViewState` (scroll position, zoom, selection), `UIState` (theme, layout, DPI, animation state), `WorkerState` (thread handles, ring buffers, work queues), and `DataState` (image array, grid items, directories). The original `AppState` remains as the top-level container with embedded sub-structs. This was done as a single commit rather than the planned incremental approach. Field paths throughout the codebase were updated to use sub-struct accessors (e.g., `s->gpu.d3d_device` instead of `s->d3d_device`).
+- **5.3** — `log_error()` was implemented in `lib/core/logger.c` (planned as `src/logger.c`). It uses `OutputDebugStringW` for diagnostic output. Logging was added to D3D/D2D/DWrite init paths (`lib/gpu/device.c`, `lib/gpu/d2d.c`), WIC decode failures (`lib/image/loader.c`), worker thread errors (`src/asset_worker.c`), and file monitor errors (`lib/fs/monitor.c`).
+
+### What was deferred
+- **5.2 (NOT DONE)** — The planned extraction of full-image cache management into a separate file (`renderer_cache.c`) was not undertaken. The full-image cache functions (`r_get_full_image_slot`, `r_free_full_image_slot`, `r_alloc_full_image_slot`, `r_free_full_image`, `r_load_full_image`) remain in `lib/gpu/fullimage.c`. As of the current revision, this file has not reached the 1000-line threshold that motivated the extraction. This item can be revisited if the file grows.
+
+### Cross-Cutting Observations
+1. **Sub-struct granularity:** The 6-sub-struct decomposition goes beyond the original plan's scope but provides clearer ownership boundaries. Each sub-struct has a single responsibility and is updated by a well-defined set of functions.
+2. **Error logging coverage:** `log_error()` is now called in all major error paths but not exhaustively. Arena allocation failures, in particular, still use `OutputDebugStringW` directly in some paths.
+3. **5.2 remains viable:** The extraction described in 5.2 is a purely mechanical refactor that can be done at any time without behavior change. The functions are already well-isolated within `lib/gpu/fullimage.c`.
+
+---
+
 ## Pass 6 — Testing & CI
 
 ### 6.1 [CQ] Add CALBUM_TEST_BUILD compile guard
@@ -811,7 +873,7 @@ Each sub-struct extraction can be done as a separate commit. Start with `RenderS
 **What:** Tests include all source files directly (unity approach), including GPU-dependent initialization.
 
 **How:**
-- Add `#ifndef CALBUM_TEST_BUILD` guards around `main()` in `main.c` and around D3D11-dependent code in `renderer.c`.
+- Add `#ifndef CALBUM_TEST_BUILD` guards around `main()` in `main.c` and around GPU-dependent code in `lib/gpu/device.c`.
 - Update the test build command in `Makefile` to pass `-DCALBUM_TEST_BUILD`.
 
 ### 6.2 [CQ] Write tests for ring buffer concurrency
@@ -895,9 +957,9 @@ Some findings appear in multiple audit reports. Below cross-references each topi
 | Pass | Count | Type | Description | Status |
 |---|---|---|---|---|
 | 1 | 7 | BUG/SEC | Crash fixes, security hardening, thread safety | ✅ DONE |
-| 2 | 8 | PERF/UX | UI freezes, GPU thrashing, rendering overhead | |
+| 2 | 8 | PERF/UX | UI freezes, GPU thrashing, rendering overhead | ✅ DONE |
 | 3 | 6 | ARCH/CQ | Code deduplication, decomposition, const-correctness | ✅ DONE |
-| 4 | 7 | UX | Empty state, error indicators, scroll fixes, polish | |
-| 5 | 3 | ARCH | God struct decomposition, error logging, cache extraction | |
-| 6 | 3 | CQ | Test infrastructure, ring buffer tests, WIC stubs | |
-| **Total** | **34** | | **Deduplicated implementation items** | **3/6 passes done** |
+| 4 | 7 | UX | Empty state, error indicators, scroll fixes, polish | ⚠️ 5/7 DONE (4.3, 4.5 deferred) |
+| 5 | 3 | ARCH | God struct decomposition, error logging, cache extraction | ⚠️ 2/3 DONE (5.2 not done) |
+| 6 | 3 | CQ | Test infrastructure, ring buffer tests, WIC stubs | ❌ NOT STARTED |
+| **Total** | **34** | | **Deduplicated implementation items** | **4/6 passes done** |

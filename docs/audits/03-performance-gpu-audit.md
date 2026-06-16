@@ -27,7 +27,9 @@
 | | |
 |---|---|
 | **Severity** | **High** |
-| **Location** | `renderer.c:579-598` |
+| **Location** | `lib/gpu/d2d.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Single brush at init, `SetColor()` used instead (Master Plan 2.2) |
 
 **Description:** `CreateSolidColorBrush` is called every time text is drawn. With ~10-15 text draw calls per frame from the gallery UI (folder names, breadcrumbs, sort menu, buttons) and ~12-14 from full-image view (metadata panel, icons, zoom badge), this creates and destroys 10-15 D2D brushes per frame. D2D brush creation involves GPU resource allocation.
 
@@ -40,7 +42,9 @@
 | | |
 |---|---|
 | **Severity** | **High** |
-| **Location** | `renderer.c:592-595` (in `r_draw_text_ext`) and `renderer.c:627-631` (in `r_draw_text_aligned`) |
+| **Location** | `lib/gpu/d2d.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Single pair per frame (Master Plan 2.2). One exception: warning icon per failed thumbnail has its own pair. |
 
 **Description:** Each text call opens its own `BeginDraw`/`EndDraw`. D2D internally flushes its command buffer on `EndDraw`, losing batching. Combined with finding 1.1, this is significant overhead.
 
@@ -53,9 +57,11 @@
 | | |
 |---|---|
 | **Severity** | **High** |
-| **Location** | `renderer.c:614, 916` |
+| **Location** | `lib/gpu/d2d.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Cached layouts for icon glyphs created at init (Master Plan 2.3) |
 
-**Description:** `r_draw_text_aligned()` (line 614) and `r_measure_text_width()` (line 916) create a new `IDWriteTextLayout` object every call. Text layout creation performs Unicode shaping, line breaking, and font fallback — all relatively heavy. Gallery view calls this ~10-15 times per frame; full-image view calls it ~12-14 times per frame.
+**Description:** `r_draw_text_aligned()` and `r_measure_text_width()` create a new `IDWriteTextLayout` object every call. Text layout creation performs Unicode shaping, line breaking, and font fallback — all relatively heavy. Gallery view calls this ~10-15 times per frame; full-image view calls it ~12-14 times per frame.
 
 **Remediation:** Cache text layouts for static strings (button labels, icons). For dynamic strings (file paths, metadata), consider reusing a single layout object and calling `SetText()` instead of create/release. At minimum, avoid creation for trivial single-character strings (icons).
 
@@ -66,7 +72,9 @@
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `gallery.c:159-161`, `gallery_fullimage.c:217-219`, `gallery_fullimage.c:424-427`, `main.c:784-786` |
+| **Location** | `gallery.c`, `gallery_fullimage.c`, `main.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Down to one call per render function (Master Plan 2.7) |
 
 **Description:** Called once in `gal_render_gallery`, called twice in `gal_render_fullimage`, called yet again in the main message loop. These are syscalls into `win32k.sys`.
 
@@ -79,7 +87,9 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `gallery.c:156`, `gallery_fullimage.c:178`, `renderer.c:206` |
+| **Location** | `gallery.c`, `gallery_fullimage.c`, `lib/gpu/d2d.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | MAX_INSTANCES + bounds guards (Master Plan 1.2) |
 
 **Description:** Both renderers declare `static InstanceData instances[4096]`. The gallery caps at 4080 with a silent `break`. If the grid grows (e.g., very small thumbnails on high-DPI with many columns), instances silently stop being emitted.
 
@@ -92,7 +102,9 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `gallery.c:484-517` and `gallery.c:520-544` |
+| **Location** | `gallery.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Cached `display_parent` string (Master Plan 4.7) |
 
 **Description:** The `parent_formatted` string is built and the `display_parent` path is formatted twice: once for measurement and once for rendering. The second pass is an exact duplicate.
 
@@ -105,9 +117,11 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `gallery.c:510-516` |
+| **Location** | `gallery.c` |
+| **Status** | ⚠️ PARTIALLY |
+| **Resolution** | Still present but now cached (only runs on dir/DPI change) |
 
-**Description:** Appends `\"x\"` to measure trailing space, then subtracts the width of `\"x\"`. This calls `CreateTextLayout` twice.
+**Description:** Appends `"x"` to measure trailing space, then subtracts the width of `"x"`. This calls `CreateTextLayout` twice.
 
 **Remediation:** Use `DWRITE_TEXT_METRICS::widthIncludingTrailingWhitespace` from the `GetMetrics` call directly.
 
@@ -120,7 +134,9 @@
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `renderer.c:476-485` |
+| **Location** | `lib/gpu/texture.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | O(1) via `slot_owner` reverse map (Master Plan 2.5) |
 
 **Description:** To find which image owns a GPU slot, the function linearly scans every image entry (potentially thousands).
 
@@ -133,7 +149,9 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `renderer.c:808-829` |
+| **Location** | `lib/gpu/fullimage.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Uses `fiv_is_in_strip()`, `FULL_CACHE_SIZE=32` (Master Plan 3.1) |
 
 **Description:** For each of the 3 full-image slots, the code scans the visible strip thumbnails. With FULL_CACHE_SIZE=3, this is fast, but overly complex.
 
@@ -146,7 +164,9 @@
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `renderer.c:875` |
+| **Location** | `lib/gpu/fullimage.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | MipLevels=1, immutable texture prevents GenerateMips |
 
 **Description:** `desc.MipLevels = 1`. When the main image is zoomed out, the GPU minifies without mipmapping, causing aliasing/scintillation.
 
@@ -159,7 +179,9 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `renderer.c:527-528` |
+| **Location** | `lib/gpu/texture.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Still uses immediate context `UpdateSubresource` |
 
 **Description:** Using the immediate context for `UpdateSubresource` serializes the upload with rendering.
 
@@ -172,7 +194,9 @@
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `types.h:335` (MAX_GPU_TEXTURES=100) |
+| **Location** | `src/types.h` (MAX_GPU_TEXTURES) |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Increased to 1024 (Master Plan 2.6) |
 
 **Description:** On a grid with many columns visible (e.g., 6 columns × 20 rows = 120 visible thumbnails), visible thumbnails exceed the pool, causing LRU thrashing.
 
@@ -185,7 +209,9 @@
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `renderer.c:531-542` |
+| **Location** | `lib/gpu/d2d.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Changed to Gaussian weights but still 25-tap single-pass |
 
 **Description:** `r_copy_backbuffer_for_blur()` copies the entire backbuffer and calls `GenerateMips`. The blur reads 25 samples per pixel. On a 1920×1080 window this is ~52M texture reads per blur panel draw.
 
@@ -195,20 +221,11 @@
 
 ## 3. D2D / DirectWrite Overhead
 
-### 3.1 Per-frame `CreateSolidColorBrush`
-**Severity: High** | **Location:** `renderer.c:587`
-
-Pre-create a white brush at init (already done, `s->d2d_brush`). Use `SetColor` rather than creating new brushes.
-
-### 3.2 Per-text-call BeginDraw/EndDraw
-**Severity: High** | **Location:** `renderer.c:592,595,627,631`
-
-Restructure to single BeginDraw/EndDraw per frame.
-
-### 3.3 Per-call `CreateTextLayout`
-**Severity: High** | **Location:** `renderer.c:614,916`
-
-Cache layouts for static text; reuse layout objects for dynamic text via `SetText`.
+| # | Finding | Status | Resolution |
+|---|---|---|---|
+| 3.1 | Per-frame `CreateSolidColorBrush` | ✅ RESOLVED | `SetColor` used on single brush (Master Plan 2.2) |
+| 3.2 | Per-text-call BeginDraw/EndDraw | ✅ RESOLVED | Single pair per frame (Master Plan 2.2) |
+| 3.3 | Per-call `CreateTextLayout` | ✅ RESOLVED | Cached layouts (Master Plan 2.3) |
 
 ---
 
@@ -219,7 +236,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Critical** |
-| **Location** | `renderer.c:865` → `image_loader.c:205-305` |
+| **Location** | `lib/gpu/fullimage.c` → `lib/image/loader.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Async via worker threads (Master Plan 2.1) |
 
 **Description:** `r_load_full_image()` calls `il_load_full_image()` which does WIC decode (including JPEG decompression, scaling, format conversion) synchronously on the render thread. For large files (especially 20+ MP RAW camera images), this can stall the frame for 100-500+ ms, causing visible freezing and DWM timeout.
 
@@ -232,7 +251,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `gallery_fullimage.c:131-174` |
+| **Location** | `gallery_fullimage.c` |
+| **Status** | ⚠️ PARTIALLY |
+| **Resolution** | Main image async; adjacent preloads still sync |
 
 **Description:** The preloading loop loads one adjacent image per frame for staggering. But each call still does a synchronous WIC decode on the main thread.
 
@@ -245,7 +266,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `image_loader.c:8,44,90,266` |
+| **Location** | `lib/image/loader.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Still global static, workers drained before shutdown |
 
 **Description:** `g_wic_factory` is a single `IWICImagingFactory` pointer. All 4 worker threads call methods on it concurrently. WIC may serialize on internal locks.
 
@@ -258,7 +281,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `asset_worker.c:75` |
+| **Location** | `src/asset_worker.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Still malloc/free per thumbnail in `asset_worker.c` |
 
 **Description:** Each cache hit allocates a ~6 KB buffer, then frees it. On a first-load of 10,000 images, this creates 10,000 short-lived allocations.
 
@@ -271,7 +296,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `gallery.c:229-233` |
+| **Location** | `gallery.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | All visible items request in single frame |
 
 **Description:** The gallery loop requests thumbnails for all visible items immediately. The ring buffer fills quickly.
 
@@ -284,7 +311,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `main.c:152-186` |
+| **Location** | `main.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | One message per completed thumb |
 
 **Description:** Each completed thumbnail posts a message. During bulk loading, the main thread spends significant time doing texture uploads and evictions per message.
 
@@ -299,7 +328,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `app.c:166-183` |
+| **Location** | `src/app.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Capacity doubling pattern unchanged |
 
 **Description:** When `app_append_image_entry` exceeds capacity, it allocates a new block (2× size) and memcpy's old entries. The old arena space is never reclaimed. With exponential growth, the waste for 10,000 images is ~5.5 MB.
 
@@ -312,7 +343,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `app.c:316` |
+| **Location** | `src/app.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | `arena_reset` called per `app_populate_grid_items` |
 
 **Description:** The 2MB arena could theoretically be exhausted on folders with thousands of unique subdirectory names.
 
@@ -325,7 +358,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `main.c:12` |
+| **Location** | `main.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Resolution capped at 2048px max dimension |
 
 **Description:** `g_decode_buffer` is a fixed 16 MB heap allocation. If a full image exceeds 16 MB uncompressed (e.g., 2048×2048 RGBA = 16 MB exactly), the check could fail on edge cases.
 
@@ -340,7 +375,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `main.c:749-819` |
+| **Location** | `main.c` |
+| **Status** | 🔴 STILL RELEVANT (by design) |
+| **Resolution** | Works correctly, intentional trade-off |
 
 **Description:** When the app is redrawing every frame, it calls `PeekMessage` + `UpdateWindow` synchronously. When idle, `WaitMessage()` correctly yields CPU.
 
@@ -353,7 +390,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `main.c:770-778` |
+| **Location** | `main.c` |
+| **Status** | 🔴 STILL RELEVANT (by design) |
+| **Resolution** | Works correctly |
 
 **Description:** `full_load_timer` is decremented by `delta_time` each iteration of the message loop. Correct.
 
@@ -366,7 +405,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Medium** |
-| **Location** | `renderer.c:81-111` |
+| **Location** | `lib/gpu/shader.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Changed to Gaussian weights but still 25-tap single-pass |
 
 **Description:** The TOKEN_BLUR path samples `blur_texture` 25 times per pixel with fixed weights. On integrated GPUs (Intel UHD, AMD Vega mobile), this can be significant. Additionally, `SampleLevel` with mip level 2.5 means the GPU performs trilinear filtering on each of those 25 reads.
 
@@ -379,7 +420,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `renderer.c:220-224` |
+| **Location** | `lib/gpu/device.c` |
+| **Status** | 🔴 STILL RELEVANT |
+| **Resolution** | Single sampler for all textures |
 
 **Description:** `D3D11_FILTER_MIN_MAG_MIP_LINEAR` enables trilinear filtering for all textures, including BC1 thumbnails that are always rendered at 1:1.
 
@@ -394,7 +437,9 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 | | |
 |---|---|
 | **Severity** | **Low** |
-| **Location** | `gallery.c:297-298,306,309, etc.` |
+| **Location** | `gallery.c` |
+| **Status** | ✅ RESOLVED |
+| **Resolution** | Gated by `if (ms > 0)` check |
 
 **Description:** The timer decrement and hover interpolation run even when the scrollbar is invisible.
 
@@ -404,31 +449,51 @@ Cache layouts for static text; reuse layout objects for dynamic text via `SetTex
 
 ## 9. Summary Matrix
 
-| # | Finding | Category | Severity | Performance Impact | Fix Difficulty |
-|---|---|---|---|---|---|
-| 1.1 | Per-frame D2D brush creation | Rendering | **High** | High | Easy |
-| 1.2 | Multiple BeginDraw/EndDraw pairs | Rendering | **High** | Medium | Easy |
-| 1.3 | Per-call CreateTextLayout | Rendering | **High** | Medium-High | Medium |
-| 1.4 | Redundant GetCursorPos | Rendering | **Medium** | Low | Easy |
-| 1.5 | 4096 instance cap + silent truncation | Rendering | **Low** | Low | Easy |
-| 1.6 | Duplicate path formatting | Rendering | **Low** | Low | Easy |
-| 1.7 | Dummy-character text width measurement | Rendering | **Low** | Low | Easy |
-| 2.1 | O(N) texture eviction scan | GPU Resources | **Medium** | Medium | Easy |
-| 2.2 | Overengineered full-slot allocation | GPU Resources | **Low** | Negligible | Easy |
-| 2.3 | No mipmaps for full images | GPU Resources | **Medium** | Medium | Medium |
-| 2.4 | Immediate-context UpdateSubresource | GPU Resources | **Low** | Low-Medium | Medium |
-| 2.5 | Small texture pool (100 slots) | GPU Resources | **Low** | Medium | Easy |
-| 2.6 | GPU cost of blur effect | GPU Resources | **Medium** | Medium | Medium |
-| 4.1 | Synchronous WIC decode on main thread | Threading | **Critical** | Critical | Hard (architectural) |
-| 4.2 | Synchronous preloading of adjacent images | Threading | **Medium** | Medium | Hard (depends on 4.1) |
-| 4.3 | Shared WIC factory across threads | Threading | **Medium** | Medium | Easy |
-| 4.4 | malloc/free per cache read | Memory | **Low** | Low | Easy |
-| 4.5 | No rate limiting on thumbnail requests | Threading | **Low** | Low | Easy |
-| 4.6 | Serial thumb completion processing | Threading | **Low** | Low | Medium |
-| 5.1 | Arena waste on progressive resize | Memory | **Low** | Low | Easy |
-| 5.2 | 2MB nav_arena potential exhaustion | Memory | **Low** | Very low | Easy |
-| 5.3 | 16MB decode buffer edge case | Memory | **Low** | Very low | Easy |
-| 6.1 | Synchronous UpdateWindow paint pattern | Frame Pacing | **Low** | Low | Medium |
-| 7.1 | 25-tap single-pass blur shader | Shader | **Medium** | Medium | Medium |
-| 7.2 | Unnecessary trilinear on thumbnails | Shader | **Low** | Low | Easy |
-| 8.1 | Scrollbar timer runs when hidden | Misc | **Low** | Negligible | Easy |
+| # | Finding | Category | Severity | Status |
+|---|---|---|---|---|
+| 1.1 | Per-frame D2D brush creation | Rendering | **High** | ✅ RESOLVED |
+| 1.2 | Multiple BeginDraw/EndDraw pairs | Rendering | **High** | ✅ RESOLVED |
+| 1.3 | Per-call CreateTextLayout | Rendering | **High** | ✅ RESOLVED |
+| 1.4 | Redundant GetCursorPos | Rendering | **Medium** | ✅ RESOLVED |
+| 1.5 | 4096 instance cap + silent truncation | Rendering | **Low** | ✅ RESOLVED |
+| 1.6 | Duplicate path formatting | Rendering | **Low** | ✅ RESOLVED |
+| 1.7 | Dummy-character text width measurement | Rendering | **Low** | ⚠️ PARTIALLY |
+| 2.1 | O(N) texture eviction scan | GPU Resources | **Medium** | ✅ RESOLVED |
+| 2.2 | Overengineered full-slot allocation | GPU Resources | **Low** | ✅ RESOLVED |
+| 2.3 | No mipmaps for full images | GPU Resources | **Medium** | 🔴 STILL RELEVANT |
+| 2.4 | Immediate-context UpdateSubresource | GPU Resources | **Low** | 🔴 STILL RELEVANT |
+| 2.5 | Small texture pool (100 slots) | GPU Resources | **Low** | ✅ RESOLVED |
+| 2.6 | GPU cost of blur effect | GPU Resources | **Medium** | 🔴 STILL RELEVANT |
+| 3.1 | Per-frame CreateSolidColorBrush | D2D Overhead | **High** | ✅ RESOLVED |
+| 3.2 | Per-text-call BeginDraw/EndDraw | D2D Overhead | **High** | ✅ RESOLVED |
+| 3.3 | Per-call CreateTextLayout | D2D Overhead | **High** | ✅ RESOLVED |
+| 4.1 | Synchronous WIC decode on main thread | Threading | **Critical** | ✅ RESOLVED |
+| 4.2 | Synchronous preloading of adjacent images | Threading | **Medium** | ⚠️ PARTIALLY |
+| 4.3 | Shared WIC factory across threads | Threading | **Medium** | 🔴 STILL RELEVANT |
+| 4.4 | malloc/free per cache read | Memory | **Low** | 🔴 STILL RELEVANT |
+| 4.5 | No rate limiting on thumbnail requests | Threading | **Low** | 🔴 STILL RELEVANT |
+| 4.6 | Serial thumb completion processing | Threading | **Low** | 🔴 STILL RELEVANT |
+| 5.1 | Arena waste on progressive resize | Memory | **Low** | 🔴 STILL RELEVANT |
+| 5.2 | 2MB nav_arena potential exhaustion | Memory | **Low** | 🔴 STILL RELEVANT |
+| 5.3 | 16MB decode buffer edge case | Memory | **Low** | ✅ RESOLVED |
+| 6.1 | PeekMessage + WaitMessage pattern | Frame Pacing | **Low** | 🔴 STILL RELEVANT (by design) |
+| 6.2 | Full-image load debounce timer | Frame Pacing | **Low** | 🔴 STILL RELEVANT (by design) |
+| 7.1 | 25-tap single-pass blur shader | Shader | **Medium** | 🔴 STILL RELEVANT |
+| 7.2 | Unnecessary trilinear on thumbnails | Shader | **Low** | 🔴 STILL RELEVANT |
+| 8.1 | Scrollbar timer runs when hidden | Misc | **Low** | ✅ RESOLVED |
+
+### Status Legend
+
+| Symbol | Meaning |
+|---|---|
+| ✅ RESOLVED | Addressed in codebase |
+| ⚠️ PARTIALLY | Partially addressed (noted in Resolution) |
+| 🔴 STILL RELEVANT | Not yet addressed |
+| 🔴 STILL RELEVANT (by design) | Intentional trade-off, kept as-is |
+
+### Resolution Summary
+
+- **3** items still relevant by design (kept intentionally)
+- **7** items still relevant (not yet addressed)
+- **2** items partially addressed
+- **18** items resolved
