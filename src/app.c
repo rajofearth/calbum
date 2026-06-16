@@ -11,11 +11,11 @@ void app_init(AppState *s)
 
     // Arena
     void *arena = VirtualAlloc(NULL, ARENA_CAPACITY, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    arena_init(&s->arena, arena, ARENA_CAPACITY);
+    arena_init(&s->data.arena, arena, ARENA_CAPACITY);
 
     // nav_arena (2MB block)
     void *nav_arena_buf = VirtualAlloc(NULL, (SIZE_T) (2 * 1024 * 1024), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    arena_init(&s->nav_arena, nav_arena_buf, (size_t) (2 * 1024 * 1024));
+    arena_init(&s->data.nav_arena, nav_arena_buf, (size_t) (2 * 1024 * 1024));
 
     // Frame timing
     LARGE_INTEGER freq;
@@ -26,12 +26,12 @@ void app_init(AppState *s)
     s->last_tick = now.QuadPart;
 
     // Ring buffer fields
-    rb_init(&s->work_queue, (void *) s->ring_slots, RING_CAPACITY);
+    rb_init(&s->worker.work_queue, (void *) s->worker.ring_slots, RING_CAPACITY);
 
-    s->view_mode = VIEW_GALLERY;
-    s->selected_index = -1;
-    s->sort_mode = SORT_DATE_CREATED;
-    s->sort_descending = 1; // Default to newest first
+    s->view.view_mode = VIEW_GALLERY;
+    s->view.selected_index = -1;
+    s->view.sort_mode = SORT_DATE_CREATED;
+    s->view.sort_descending = 1; // Default to newest first
     s->needs_redraw = 1;
 }
 
@@ -41,22 +41,22 @@ void app_shutdown(AppState *s)
     aw_stop_workers(s);
     r_free_full_image(s);
 
-    if (s->images)
+    if (s->data.images)
     {
-        for (int i = 0; i < s->count; i++)
+        for (int i = 0; i < s->data.count; i++)
         {
-            if (s->images[i].texture_slot != -1)
+            if (s->data.images[i].texture_slot != -1)
             {
-                r_evict_texture(s, s->images[i].texture_slot);
+                r_evict_texture(s, s->data.images[i].texture_slot);
             }
         }
     }
 
-    if (s->arena.buf)
-        VirtualFree(s->arena.buf, 0, MEM_RELEASE);
-    if (s->nav_arena.buf)
-        VirtualFree(s->nav_arena.buf, 0, MEM_RELEASE);
-    rb_destroy(&s->work_queue);
+    if (s->data.arena.buf)
+        VirtualFree(s->data.arena.buf, 0, MEM_RELEASE);
+    if (s->data.nav_arena.buf)
+        VirtualFree(s->data.nav_arena.buf, 0, MEM_RELEASE);
+    rb_destroy(&s->worker.work_queue);
 }
 
 void app_get_pictures_folder(wchar_t *buf, int len)
@@ -143,50 +143,50 @@ void app_load_folder(AppState *s, const wchar_t *path)
 
     // ── 3. Free old image resources ──────────────────────────────────
     r_free_full_image(s);
-    if (s->images)
+    if (s->data.images)
     {
-        for (int i = 0; i < s->count; i++)
+        for (int i = 0; i < s->data.count; i++)
         {
-            if (s->images[i].texture_slot != -1)
+            if (s->data.images[i].texture_slot != -1)
             {
-                r_evict_texture(s, s->images[i].texture_slot);
+                r_evict_texture(s, s->data.images[i].texture_slot);
             }
         }
     }
 
     // ── 4. Reset arena and image array ───────────────────────────────
-    arena_reset(&s->arena);
-    s->count = s->capacity = 0;
-    s->images = NULL;
-    s->work_queue.head = s->work_queue.tail = 0;
-    arena_reset(&s->nav_arena);
+    arena_reset(&s->data.arena);
+    s->data.count = s->data.capacity = 0;
+    s->data.images = NULL;
+    s->worker.work_queue.head = s->worker.work_queue.tail = 0;
+    arena_reset(&s->data.nav_arena);
 
     // ── 5. Reset view state ──────────────────────────────────────────
-    s->view_mode = VIEW_GALLERY;
-    s->selected_index = -1;
-    s->scroll_target_y = s->scroll_current_y = 0.0F;
-    s->full_load_timer = 0.0;
-    s->full_load_pending = 0;
+    s->view.view_mode = VIEW_GALLERY;
+    s->view.selected_index = -1;
+    s->view.scroll_target_y = s->view.scroll_current_y = 0.0F;
+    s->data.full_load_timer = 0.0;
+    s->data.full_load_pending = 0;
     s->needs_redraw = 1;
 
     // ── 6. Set directory and start async scan thread ────────────────
-    wcsncpy(s->current_dir, path, MAX_PATH_LEN - 1);
-    s->current_dir[MAX_PATH_LEN - 1] = L'\0';
-    wcsncpy(s->viewing_dir, path, MAX_PATH_LEN - 1);
-    s->viewing_dir[MAX_PATH_LEN - 1] = L'\0';
+    wcsncpy(s->data.current_dir, path, MAX_PATH_LEN - 1);
+    s->data.current_dir[MAX_PATH_LEN - 1] = L'\0';
+    wcsncpy(s->data.viewing_dir, path, MAX_PATH_LEN - 1);
+    s->data.viewing_dir[MAX_PATH_LEN - 1] = L'\0';
 
-    s->scanning = 1;
-    s->scan_progress = 0;
+    s->worker.scanning = 1;
+    s->worker.scan_progress = 0;
     ScanParam *sp = (ScanParam *) malloc(sizeof(ScanParam));
     if (sp)
     {
         wcsncpy(sp->directory, path, MAX_PATH_LEN - 1);
         sp->directory[MAX_PATH_LEN - 1] = L'\0';
         sp->hwnd = s->hwnd;
-        s->scan_thread = CreateThread(NULL, 0, fs_scan_thread, sp, 0, NULL);
-        if (!s->scan_thread)
+        s->worker.scan_thread = CreateThread(NULL, 0, fs_scan_thread, sp, 0, NULL);
+        if (!s->worker.scan_thread)
         {
-            s->scanning = 0;
+            s->worker.scanning = 0;
             free(sp);
         }
     }
@@ -197,43 +197,43 @@ void app_load_folder(AppState *s, const wchar_t *path)
 void app_update_title(AppState *s)
 {
     wchar_t title[MAX_PATH_LEN + 64];
-    swprintf(title, sizeof(title) / sizeof(wchar_t), L"calbum " APP_VERSION_W L" \u2014 %s", s->viewing_dir);
+    swprintf(title, sizeof(title) / sizeof(wchar_t), L"calbum " APP_VERSION_W L" \u2014 %s", s->data.viewing_dir);
     SetWindowTextW(s->hwnd, title);
 }
 
 ImageEntry *app_append_image_entry(AppState *s, const wchar_t *path, const wchar_t *filename, uint64_t file_size,
                                    uint64_t last_modified, uint64_t created_time)
 {
-    if (s->count >= s->capacity)
+    if (s->data.count >= s->data.capacity)
     {
-        int new_cap = s->capacity ? s->capacity * 2 : 256;
+        int new_cap = s->data.capacity ? s->data.capacity * 2 : 256;
         size_t sz = new_cap * sizeof(ImageEntry);
         size_t align = 16;
         size_t mask = align - 1;
-        size_t off = (s->arena.offset + mask) & ~mask;
-        if (off + sz > s->arena.capacity)
+        size_t off = (s->data.arena.offset + mask) & ~mask;
+        if (off + sz > s->data.arena.capacity)
             return NULL;
 
-        ImageEntry *old_images = s->images;
-        s->images = (ImageEntry *) (s->arena.buf + off);
-        s->arena.offset = off + sz;
+        ImageEntry *old_images = s->data.images;
+        s->data.images = (ImageEntry *) (s->data.arena.buf + off);
+        s->data.arena.offset = off + sz;
         // Copy surviving entries into the new block so nothing is lost
-        if (old_images && s->count > 0)
-            memcpy(s->images, old_images, s->count * sizeof(ImageEntry));
-        s->capacity = new_cap;
+        if (old_images && s->data.count > 0)
+            memcpy(s->data.images, old_images, s->data.count * sizeof(ImageEntry));
+        s->data.capacity = new_cap;
     }
 
     size_t path_sz = (wcslen(path) + 1) * sizeof(wchar_t);
     size_t name_sz = (wcslen(filename) + 1) * sizeof(wchar_t);
-    wchar_t *p_path = (wchar_t *) arena_alloc(&s->arena, path_sz);
-    wchar_t *p_name = (wchar_t *) arena_alloc(&s->arena, name_sz);
+    wchar_t *p_path = (wchar_t *) arena_alloc(&s->data.arena, path_sz);
+    wchar_t *p_name = (wchar_t *) arena_alloc(&s->data.arena, name_sz);
     if (!p_path || !p_name)
         return NULL;
 
     wcscpy(p_path, path);
     wcscpy(p_name, filename);
 
-    ImageEntry *e = &s->images[s->count];
+    ImageEntry *e = &s->data.images[s->data.count];
     e->path = p_path;
     e->filename = p_name;
     e->file_size = file_size;
@@ -244,7 +244,7 @@ ImageEntry *app_append_image_entry(AppState *s, const wchar_t *path, const wchar
     e->thumb_requested = 0;
     e->full_width = 0;
     e->full_height = 0;
-    s->count++;
+    s->data.count++;
     return e;
 }
 
@@ -288,13 +288,13 @@ static void app_calculate_folder_counts(AppState *s, const wchar_t *folder_path,
     size_t folder_len = wcslen(folder_path);
     int has_trailing_slash = (folder_len > 0 && folder_path[folder_len - 1] == L'\\');
 
-    // Collect direct subfolder names under folder_path using s->images
-    const wchar_t **sub_folders = arena_alloc_array(&s->nav_arena, const wchar_t *, s->count);
+    // Collect direct subfolder names under folder_path using s->data.images
+    const wchar_t **sub_folders = arena_alloc_array(&s->data.nav_arena, const wchar_t *, s->data.count);
     int sub_folder_count = 0;
 
-    for (int i = 0; i < s->count; i++)
+    for (int i = 0; i < s->data.count; i++)
     {
-        const wchar_t *img_path = s->images[i].path;
+        const wchar_t *img_path = s->data.images[i].path;
         if (_wcsnicmp(img_path, folder_path, folder_len) == 0)
         {
             const wchar_t *rel_path = img_path + folder_len;
@@ -335,7 +335,7 @@ static void app_calculate_folder_counts(AppState *s, const wchar_t *folder_path,
                     if (!duplicate)
                     {
                         wchar_t *sub_name =
-                            (wchar_t *) arena_alloc(&s->nav_arena, (sub_name_len + 1) * sizeof(wchar_t));
+                            (wchar_t *) arena_alloc(&s->data.nav_arena, (sub_name_len + 1) * sizeof(wchar_t));
                         if (sub_name)
                         {
                             wcsncpy(sub_name, rel_path, sub_name_len);
@@ -354,28 +354,28 @@ static void app_calculate_folder_counts(AppState *s, const wchar_t *folder_path,
 
 void app_populate_grid_items(AppState *s)
 {
-    arena_reset(&s->nav_arena);
-    s->grid_item_count = 0;
-    s->strip_image_count = 0;
+    arena_reset(&s->data.nav_arena);
+    s->data.grid_item_count = 0;
+    s->data.strip_image_count = 0;
 
-    if (!s->grid_items || s->grid_item_capacity <= 0)
+    if (!s->data.grid_items || s->data.grid_item_capacity <= 0)
         return;
 
     // 1. Add parent directory ".." if we are not at the root current_dir
-    int is_sub_dir = (_wcsicmp(s->viewing_dir, s->current_dir) != 0);
+    int is_sub_dir = (_wcsicmp(s->data.viewing_dir, s->data.current_dir) != 0);
     if (is_sub_dir)
     {
         wchar_t parent[MAX_PATH_LEN];
-        app_get_parent_dir(s->viewing_dir, parent, MAX_PATH_LEN);
+        app_get_parent_dir(s->data.viewing_dir, parent, MAX_PATH_LEN);
 
-        GridItem *item = &s->grid_items[s->grid_item_count++];
+        GridItem *item = &s->data.grid_items[s->data.grid_item_count++];
         item->type = ITEM_FOLDER;
 
         size_t name_sz = sizeof(L"..");
         size_t path_sz = (wcslen(parent) + 1) * sizeof(wchar_t);
 
-        wchar_t *p_name = (wchar_t *) arena_alloc(&s->nav_arena, name_sz);
-        wchar_t *p_path = (wchar_t *) arena_alloc(&s->nav_arena, path_sz);
+        wchar_t *p_name = (wchar_t *) arena_alloc(&s->data.nav_arena, name_sz);
+        wchar_t *p_path = (wchar_t *) arena_alloc(&s->data.nav_arena, path_sz);
         if (p_name && p_path)
         {
             wcscpy(p_name, L"..");
@@ -388,25 +388,25 @@ void app_populate_grid_items(AppState *s)
         }
     }
 
-    int start_folder_idx = s->grid_item_count;
+    int start_folder_idx = s->data.grid_item_count;
 
-    // 2. Scan s->images to build unique direct subfolders list and direct images list.
+    // 2. Scan s->data.images to build unique direct subfolders list and direct images list.
     // To do O(N log N) subfolder deduplication, we collect subfolder names first, sort them,
     // and extract the unique ones.
-    const wchar_t **raw_folders = arena_alloc_array(&s->nav_arena, const wchar_t *, s->count);
+    const wchar_t **raw_folders = arena_alloc_array(&s->data.nav_arena, const wchar_t *, s->data.count);
     int raw_folder_count = 0;
 
     // We also allocate a temp array for direct image items in nav_arena.
-    GridItem *temp_images = arena_alloc_array(&s->nav_arena, GridItem, s->count);
+    GridItem *temp_images = arena_alloc_array(&s->data.nav_arena, GridItem, s->data.count);
     int temp_image_count = 0;
 
-    size_t view_len = wcslen(s->viewing_dir);
-    int has_trailing_slash = (view_len > 0 && s->viewing_dir[view_len - 1] == L'\\');
+    size_t view_len = wcslen(s->data.viewing_dir);
+    int has_trailing_slash = (view_len > 0 && s->data.viewing_dir[view_len - 1] == L'\\');
 
-    for (int i = 0; i < s->count; i++)
+    for (int i = 0; i < s->data.count; i++)
     {
-        const wchar_t *img_path = s->images[i].path;
-        if (_wcsnicmp(img_path, s->viewing_dir, view_len) == 0)
+        const wchar_t *img_path = s->data.images[i].path;
+        if (_wcsnicmp(img_path, s->data.viewing_dir, view_len) == 0)
         {
             const wchar_t *rel_path = img_path + view_len;
             if (!has_trailing_slash && *rel_path == L'\\')
@@ -422,7 +422,7 @@ void app_populate_grid_items(AppState *s)
             if (slash == NULL)
             {
                 // Direct image in the current directory!
-                if (temp_image_count < s->count)
+                if (temp_image_count < s->data.count)
                 {
                     GridItem *item = &temp_images[temp_image_count++];
                     item->type = ITEM_IMAGE;
@@ -439,7 +439,8 @@ void app_populate_grid_items(AppState *s)
                 size_t sub_name_len = slash - rel_path;
                 if (sub_name_len > 0 && sub_name_len < MAX_PATH_LEN)
                 {
-                    wchar_t *sub_name = (wchar_t *) arena_alloc(&s->nav_arena, (sub_name_len + 1) * sizeof(wchar_t));
+                    wchar_t *sub_name =
+                        (wchar_t *) arena_alloc(&s->data.nav_arena, (sub_name_len + 1) * sizeof(wchar_t));
                     if (sub_name)
                     {
                         wcsncpy(sub_name, rel_path, sub_name_len);
@@ -460,16 +461,16 @@ void app_populate_grid_items(AppState *s)
         {
             if (i == 0 || _wcsicmp(raw_folders[i], raw_folders[i - 1]) != 0)
             {
-                if (s->grid_item_count < s->grid_item_capacity)
+                if (s->data.grid_item_count < s->data.grid_item_capacity)
                 {
-                    GridItem *item = &s->grid_items[s->grid_item_count++];
+                    GridItem *item = &s->data.grid_items[s->data.grid_item_count++];
                     item->type = ITEM_FOLDER;
                     item->folder_name = raw_folders[i];
                     item->image_index = -1;
 
                     // Reconstruct full folder path
                     wchar_t full_sub_path[MAX_PATH_LEN];
-                    wcsncpy(full_sub_path, s->viewing_dir, MAX_PATH_LEN - 1);
+                    wcsncpy(full_sub_path, s->data.viewing_dir, MAX_PATH_LEN - 1);
                     size_t f_len = wcslen(full_sub_path);
                     if (f_len > 0 && full_sub_path[f_len - 1] != L'\\')
                     {
@@ -478,7 +479,7 @@ void app_populate_grid_items(AppState *s)
                     wcsncat(full_sub_path, raw_folders[i], MAX_PATH_LEN - f_len - 2);
 
                     size_t path_sz = (wcslen(full_sub_path) + 1) * sizeof(wchar_t);
-                    wchar_t *p_path = (wchar_t *) arena_alloc(&s->nav_arena, path_sz);
+                    wchar_t *p_path = (wchar_t *) arena_alloc(&s->data.nav_arena, path_sz);
                     if (p_path)
                     {
                         wcscpy(p_path, full_sub_path);
@@ -497,27 +498,27 @@ void app_populate_grid_items(AppState *s)
     }
 
     // 4. Sort subfolders alphabetically
-    int folders_to_sort = s->grid_item_count - start_folder_idx;
+    int folders_to_sort = s->data.grid_item_count - start_folder_idx;
     if (folders_to_sort > 1)
     {
-        qsort(&s->grid_items[start_folder_idx], folders_to_sort, sizeof(GridItem), cmp_grid_item_folder);
+        qsort(&s->data.grid_items[start_folder_idx], folders_to_sort, sizeof(GridItem), cmp_grid_item_folder);
     }
 
     // 5. Append direct images
     for (int i = 0; i < temp_image_count; i++)
     {
-        if (s->grid_item_count < s->grid_item_capacity)
+        if (s->data.grid_item_count < s->data.grid_item_capacity)
         {
-            s->grid_items[s->grid_item_count++] = temp_images[i];
+            s->data.grid_items[s->data.grid_item_count++] = temp_images[i];
         }
     }
 
     // 6. Rebuild the cached strip_image_grid_indices
-    for (int i = 0; i < s->grid_item_count; i++)
+    for (int i = 0; i < s->data.grid_item_count; i++)
     {
-        if (s->grid_items[i].type == ITEM_IMAGE)
+        if (s->data.grid_items[i].type == ITEM_IMAGE)
         {
-            s->strip_image_grid_indices[s->strip_image_count++] = i;
+            s->data.strip_image_grid_indices[s->data.strip_image_count++] = i;
         }
     }
 }

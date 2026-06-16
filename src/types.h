@@ -412,58 +412,15 @@ typedef struct
     int h;
 } FullImageSlot;
 
-typedef struct AppState
+#define FULL_CACHE_SIZE 32
+
+// ── GPU State (D3D11 resources + full-image cache) ────────────────────
+typedef struct
 {
-    // View mode
-    ViewMode view_mode;
-    int selected_index;
-    SortMode sort_mode;
-    int sort_descending;
-
-    // Smooth scrolling (target vs visual)
-    float scroll_target_y;
-    float scroll_current_y;
-
-    // Window
-    int window_width;
-    int window_height;
-    int needs_redraw;
-    HWND hwnd;
-
-    // UI & Layout
-    Theme theme;
-    ScaledLayout layout;
-    float dpi_scale;
-    float scrollbar_opacity;
-    float scrollbar_fade_timer;
-    float scrollbar_hover_t;
-
-    // D3D11 Resources
     ID3D11Device *d3d_device;
     ID3D11DeviceContext *d3d_context;
     IDXGISwapChain *swap_chain;
     ID3D11RenderTargetView *rtv;
-
-    // D2D1 / DirectWrite Resources
-    struct ID2D1Factory *d2d_factory;
-    struct ID2D1RenderTarget *d2d_rtv;
-    struct IDWriteFactory *dwrite_factory;
-    struct IDWriteTextFormat *dwrite_format;
-    struct IDWriteTextFormat *dwrite_format_semibold;
-    struct IDWriteTextFormat *dwrite_format_regular;
-    struct IDWriteTextFormat *dwrite_format_small;
-    struct IDWriteTextFormat *dwrite_format_mono;
-    struct IDWriteTextFormat *dwrite_format_mono_small;
-    struct IDWriteTextFormat *dwrite_format_small_semibold;
-    struct IDWriteTextFormat *dwrite_format_icons;
-    struct IDWriteTextFormat *dwrite_format_icons_large;
-
-    // Cached DWrite text layouts (Section 2.3)
-    struct IDWriteTextLayout *layout_back;
-    struct IDWriteTextLayout *layout_info;
-
-    struct ID2D1SolidColorBrush *d2d_brush;
-
     ID3D11VertexShader *vs;
     ID3D11PixelShader *ps;
     ID3D11InputLayout *input_layout;
@@ -475,67 +432,42 @@ typedef struct AppState
     ID3D11Texture2D *blur_tex;
     ID3D11ShaderResourceView *blur_srv;
     ID3D11Texture2D *back_buffer;
-
     GPUTexturePool tex_pool;
-
-    // Flat array of images (arena-allocated)
-    ImageEntry *images;
-    int count;
-    int capacity;
-    Arena arena;
-
-    // Frame timing via QueryPerformanceCounter
-    double delta_time;
-    int64_t perf_counter_freq;
-    int64_t last_tick;
-
-    // Interactive State
-    int is_dragging_scrollbar;
-    float drag_start_y;
-    float drag_start_scroll_y;
-    int sort_menu_open;
-    int info_open;
-
-    // File monitor thread
-    HANDLE monitor_thread;
-    HANDLE monitor_stop_event;
-    HANDLE dir_handle;
-    int monitoring_active;
-
-    // Async directory scan state (Section 2.4)
-    int scanning;
-    int scan_progress;
-    HANDLE scan_thread;
-
-    // Asset worker thread pool
-    HANDLE worker_threads[NUM_WORKERS];
-    HANDLE worker_stop_event;
-    RingBuffer work_queue;
-    void *ring_slots[RING_CAPACITY];
-
-    // Current directory
-    wchar_t current_dir[MAX_PATH_LEN];
-
-    // Folder navigation state
-    wchar_t viewing_dir[MAX_PATH_LEN];
-    GridItem *grid_items;
-    int grid_item_count;
-    int grid_item_capacity;
-    int *strip_image_grid_indices;
-    int strip_image_count;
-    Arena nav_arena;
-
-#define FULL_CACHE_SIZE 32
-
-    // High-Resolution Cache Pool & preloading Pipeline
     FullImageSlot full_slots[FULL_CACHE_SIZE];
     ID3D11ShaderResourceView *active_full_srv;
-    double full_load_timer;
-    int full_load_pending;
+} GpuState;
+
+// ── Text State (D2D/DWrite resources) ─────────────────────────────────
+typedef struct
+{
+    struct ID2D1Factory *d2d_factory;
+    struct ID2D1RenderTarget *d2d_rtv;
+    struct ID2D1SolidColorBrush *d2d_brush;
+    struct IDWriteFactory *dwrite_factory;
+    struct IDWriteTextFormat *dwrite_format;
+    struct IDWriteTextFormat *dwrite_format_semibold;
+    struct IDWriteTextFormat *dwrite_format_regular;
+    struct IDWriteTextFormat *dwrite_format_small;
+    struct IDWriteTextFormat *dwrite_format_mono;
+    struct IDWriteTextFormat *dwrite_format_mono_small;
+    struct IDWriteTextFormat *dwrite_format_small_semibold;
+    struct IDWriteTextFormat *dwrite_format_icons;
+    struct IDWriteTextFormat *dwrite_format_icons_large;
+    struct IDWriteTextLayout *layout_back;
+    struct IDWriteTextLayout *layout_info;
+} TextState;
+
+// ── View State (navigation + zoom/pan) ────────────────────────────────
+typedef struct
+{
+    ViewMode view_mode;
+    int selected_index;
+    SortMode sort_mode;
+    int sort_descending;
+    float scroll_target_y;
+    float scroll_current_y;
     float zoom_level;
     float zoom_ui_timer;
-
-    // Centered Zoom Panning
     float zoom_pan_x;
     float zoom_pan_y;
     int is_panning;
@@ -543,6 +475,77 @@ typedef struct AppState
     float pan_start_y;
     float pan_orig_x;
     float pan_orig_y;
+} ViewState;
+
+// ── UI State (theme, layout, scrollbar, toggles) ──────────────────────
+typedef struct
+{
+    Theme theme;
+    ScaledLayout layout;
+    float dpi_scale;
+    float scrollbar_opacity;
+    float scrollbar_fade_timer;
+    float scrollbar_hover_t;
+    int is_dragging_scrollbar;
+    float drag_start_y;
+    float drag_start_scroll_y;
+    int sort_menu_open;
+    int info_open;
+} UIState;
+
+// ── Worker State (threads, scanning, monitoring) ──────────────────────
+typedef struct
+{
+    HANDLE monitor_thread;
+    HANDLE monitor_stop_event;
+    HANDLE dir_handle;
+    int monitoring_active;
+    int scanning;
+    int scan_progress;
+    HANDLE scan_thread;
+    HANDLE worker_threads[NUM_WORKERS];
+    HANDLE worker_stop_event;
+    RingBuffer work_queue;
+    void *ring_slots[RING_CAPACITY];
+} WorkerState;
+
+// ── Data State (images, grid, arenas, directories) ────────────────────
+typedef struct
+{
+    ImageEntry *images;
+    int count;
+    int capacity;
+    Arena arena;
+    Arena nav_arena;
+    wchar_t current_dir[MAX_PATH_LEN];
+    wchar_t viewing_dir[MAX_PATH_LEN];
+    GridItem *grid_items;
+    int grid_item_count;
+    int grid_item_capacity;
+    int *strip_image_grid_indices;
+    int strip_image_count;
+    double full_load_timer;
+    int full_load_pending;
+} DataState;
+
+typedef struct AppState
+{
+    // Window & timing (kept at top level - used everywhere)
+    int window_width;
+    int window_height;
+    int needs_redraw;
+    HWND hwnd;
+    double delta_time;
+    int64_t perf_counter_freq;
+    int64_t last_tick;
+
+    // Sub-structs for logical grouping
+    GpuState gpu;
+    TextState txt;
+    ViewState view;
+    UIState ui;
+    WorkerState worker;
+    DataState data;
 } AppState;
 
 // ─────────────────────────────────────────────────────────────────────

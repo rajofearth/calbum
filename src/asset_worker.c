@@ -41,14 +41,14 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
 
     for (;;)
     {
-        if (s->worker_stop_event && WaitForSingleObject(s->worker_stop_event, 0) == WAIT_OBJECT_0)
+        if (s->worker.worker_stop_event && WaitForSingleObject(s->worker.worker_stop_event, 0) == WAIT_OBJECT_0)
             return 0;
 
-        LoadRequest *req = (LoadRequest *) rb_try_pop(&s->work_queue);
+        LoadRequest *req = (LoadRequest *) rb_try_pop(&s->worker.work_queue);
 
         if (!req)
         {
-            HANDLE events[2] = {s->work_queue.nonempty, s->worker_stop_event};
+            HANDLE events[2] = {s->worker.work_queue.nonempty, s->worker.worker_stop_event};
             DWORD wait = WaitForMultipleObjects(2, events, FALSE, INFINITE);
             if (wait == WAIT_OBJECT_0 + 1)
                 return 0;
@@ -134,40 +134,40 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
 
 int aw_start_workers(AppState *s)
 {
-    if (s->worker_threads[0])
+    if (s->worker.worker_threads[0])
         return 1;
 
-    s->worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    s->worker.worker_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
 
     for (int i = 0; i < NUM_WORKERS; i++)
     {
-        s->worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, s, 0, NULL);
+        s->worker.worker_threads[i] = CreateThread(NULL, 0, aw_worker_thread, s, 0, NULL);
     }
     return 1;
 }
 
 void aw_stop_workers(AppState *s)
 {
-    if (!s->worker_threads[0])
+    if (!s->worker.worker_threads[0])
         return;
 
-    if (s->worker_stop_event)
-        SetEvent(s->worker_stop_event);
-    SetEvent(s->work_queue.nonempty);
+    if (s->worker.worker_stop_event)
+        SetEvent(s->worker.worker_stop_event);
+    SetEvent(s->worker.work_queue.nonempty);
 
     for (int i = 0; i < NUM_WORKERS; i++)
     {
-        if (s->worker_threads[i])
+        if (s->worker.worker_threads[i])
         {
-            WaitForSingleObject(s->worker_threads[i], INFINITE);
-            CloseHandle(s->worker_threads[i]);
-            s->worker_threads[i] = NULL;
+            WaitForSingleObject(s->worker.worker_threads[i], INFINITE);
+            CloseHandle(s->worker.worker_threads[i]);
+            s->worker.worker_threads[i] = NULL;
         }
     }
-    if (s->worker_stop_event)
+    if (s->worker.worker_stop_event)
     {
-        CloseHandle(s->worker_stop_event);
-        s->worker_stop_event = NULL;
+        CloseHandle(s->worker.worker_stop_event);
+        s->worker.worker_stop_event = NULL;
     }
 }
 
@@ -181,7 +181,7 @@ int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND 
     req->target_hwnd = hwnd;
     req->is_full_image = 0;
 
-    if (rb_push(&s->work_queue, req))
+    if (rb_push(&s->worker.work_queue, req))
     {
         return 1;
     }
@@ -199,7 +199,7 @@ int aw_request_full_image(AppState *s, const wchar_t *path, HWND hwnd)
     req->target_hwnd = hwnd;
     req->is_full_image = 1;
 
-    if (rb_push(&s->work_queue, req))
+    if (rb_push(&s->worker.work_queue, req))
     {
         return 1;
     }

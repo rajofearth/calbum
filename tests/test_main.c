@@ -82,8 +82,8 @@ static void test_layout_narrow(void)
     AppState s = {0};
     s.window_width = 200;
     s.window_height = 600;
-    s.grid_item_count = 10;
-    s.dpi_scale = 1.0F;
+    s.data.grid_item_count = 10;
+    s.ui.dpi_scale = 1.0F;
     GridLayout lay;
     gal_calc_layout(&s, &lay);
     CHECK(lay.cols == 1, "expected 1 column for 200px");
@@ -96,10 +96,10 @@ static void test_layout_1200(void)
     AppState s = {0};
     s.window_width = 1200;
     s.window_height = 800;
-    s.grid_item_count = 20;
-    s.dpi_scale = 1.0F;
-    s.layout.grid_gap = 8.0F;
-    s.layout.panel_padding = 16.0F;
+    s.data.grid_item_count = 20;
+    s.ui.dpi_scale = 1.0F;
+    s.ui.layout.grid_gap = 8.0F;
+    s.ui.layout.panel_padding = 16.0F;
     GridLayout lay;
     gal_calc_layout(&s, &lay);
     CHECK(lay.cols >= 7, "expected >=7 cols");
@@ -112,8 +112,8 @@ static void test_layout_1920(void)
     AppState s = {0};
     s.window_width = 1920;
     s.window_height = 1080;
-    s.grid_item_count = 100;
-    s.dpi_scale = 1.0F;
+    s.data.grid_item_count = 100;
+    s.ui.dpi_scale = 1.0F;
     GridLayout lay;
     gal_calc_layout(&s, &lay);
     CHECK(lay.cols >= 11, "expected >=11 cols at 1920px");
@@ -126,8 +126,8 @@ static void test_layout_zero_width(void)
     AppState s = {0};
     s.window_width = 0;
     s.window_height = 600;
-    s.grid_item_count = 10;
-    s.dpi_scale = 1.0F;
+    s.data.grid_item_count = 10;
+    s.ui.dpi_scale = 1.0F;
     GridLayout lay;
     gal_calc_layout(&s, &lay);
     CHECK(lay.cols >= 1, "cols should be at least 1");
@@ -138,8 +138,8 @@ static void test_hit_empty(void)
 {
     TEST("empty gallery -> no hit");
     AppState s = {0};
-    s.view_mode = VIEW_GALLERY;
-    s.grid_item_count = 0;
+    s.view.view_mode = VIEW_GALLERY;
+    s.data.grid_item_count = 0;
     int idx;
     CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit on empty");
     PASS();
@@ -149,8 +149,8 @@ static void test_hit_wrong_view(void)
 {
     TEST("wrong view mode -> no hit");
     AppState s = {0};
-    s.view_mode = VIEW_FULLIMAGE;
-    s.grid_item_count = 10;
+    s.view.view_mode = VIEW_FULLIMAGE;
+    s.data.grid_item_count = 10;
     int idx;
     CHECK(gal_hit_test(&s, 100, 100, &idx) == 0, "no hit in fullimage");
     PASS();
@@ -160,15 +160,15 @@ static void test_hit_first(void)
 {
     TEST("hit first thumbnail");
     AppState s = {0};
-    s.view_mode = VIEW_GALLERY;
+    s.view.view_mode = VIEW_GALLERY;
     s.window_width = 1200;
     s.window_height = 800;
-    s.grid_item_count = 10;
-    s.dpi_scale = 1.0F;
-    s.layout.grid_gap = 8.0F;
-    s.layout.panel_padding = 16.0F;
-    s.layout.topbar_height = 48.0F;
-    s.scroll_current_y = 0.0F;
+    s.data.grid_item_count = 10;
+    s.ui.dpi_scale = 1.0F;
+    s.ui.layout.grid_gap = 8.0F;
+    s.ui.layout.panel_padding = 16.0F;
+    s.ui.layout.topbar_height = 48.0F;
+    s.view.scroll_current_y = 0.0F;
     int idx;
     // Grid first cell: left_margin=16, top=64, cell w=160
     int got = gal_hit_test(&s, 90, 140, &idx);
@@ -180,15 +180,15 @@ static void test_hit_second(void)
 {
     TEST("hit second thumbnail");
     AppState s = {0};
-    s.view_mode = VIEW_GALLERY;
+    s.view.view_mode = VIEW_GALLERY;
     s.window_width = 1200;
     s.window_height = 800;
-    s.grid_item_count = 10;
-    s.dpi_scale = 1.0F;
-    s.layout.grid_gap = 8.0F;
-    s.layout.panel_padding = 16.0F;
-    s.layout.topbar_height = 48.0F;
-    s.scroll_current_y = 0.0F;
+    s.data.grid_item_count = 10;
+    s.ui.dpi_scale = 1.0F;
+    s.ui.layout.grid_gap = 8.0F;
+    s.ui.layout.panel_padding = 16.0F;
+    s.ui.layout.topbar_height = 48.0F;
+    s.view.scroll_current_y = 0.0F;
     int idx;
     // Grid second cell: col=1, left_margin + 1*168 = 184, top=64
     int got = gal_hit_test(&s, 250, 140, &idx);
@@ -200,15 +200,15 @@ static void test_hit_outside(void)
 {
     TEST("click outside -> no hit");
     AppState s = {0};
-    s.view_mode = VIEW_GALLERY;
+    s.view.view_mode = VIEW_GALLERY;
     s.window_width = 1200;
     s.window_height = 800;
-    s.grid_item_count = 10;
-    s.dpi_scale = 1.0F;
-    s.layout.grid_gap = 8.0F;
-    s.layout.panel_padding = 16.0F;
-    s.layout.topbar_height = 48.0F;
-    s.scroll_current_y = 0.0F;
+    s.data.grid_item_count = 10;
+    s.ui.dpi_scale = 1.0F;
+    s.ui.layout.grid_gap = 8.0F;
+    s.ui.layout.panel_padding = 16.0F;
+    s.ui.layout.topbar_height = 48.0F;
+    s.view.scroll_current_y = 0.0F;
     int idx;
     CHECK(gal_hit_test(&s, 0, 0, &idx) == 0, "no hit at (0,0)");
     PASS();
@@ -220,11 +220,11 @@ static void test_selection_middle(void)
 {
     TEST("middle -> valid prev/next");
     AppState s = {0};
-    s.count = 10;
-    s.selected_index = 5;
-    int prev = s.selected_index - 1;
-    int next = s.selected_index + 1;
-    CHECK(prev >= 0 && next < s.count, "middle index valid");
+    s.data.count = 10;
+    s.view.selected_index = 5;
+    int prev = s.view.selected_index - 1;
+    int next = s.view.selected_index + 1;
+    CHECK(prev >= 0 && next < s.data.count, "middle index valid");
     PASS();
 }
 
@@ -232,9 +232,9 @@ static void test_selection_boundary(void)
 {
     TEST("boundary at first");
     AppState s = {0};
-    s.count = 10;
-    s.selected_index = 0;
-    CHECK(s.selected_index - 1 < 0, "prev out of range");
+    s.data.count = 10;
+    s.view.selected_index = 0;
+    CHECK(s.view.selected_index - 1 < 0, "prev out of range");
     PASS();
 }
 
@@ -242,9 +242,9 @@ static void test_selection_boundary_last(void)
 {
     TEST("boundary at last");
     AppState s = {0};
-    s.count = 10;
-    s.selected_index = 9;
-    CHECK(s.selected_index + 1 >= s.count, "next out of range");
+    s.data.count = 10;
+    s.view.selected_index = 9;
+    CHECK(s.view.selected_index + 1 >= s.data.count, "next out of range");
     PASS();
 }
 
@@ -256,11 +256,11 @@ static void test_max_scroll_clamped(void)
     AppState s = {0};
     s.window_width = 1200;
     s.window_height = 800;
-    s.grid_item_count = 200;
-    s.dpi_scale = 1.0F;
-    s.layout.grid_gap = 8.0F;
-    s.layout.panel_padding = 16.0F;
-    s.layout.topbar_height = 48.0F;
+    s.data.grid_item_count = 200;
+    s.ui.dpi_scale = 1.0F;
+    s.ui.layout.grid_gap = 8.0F;
+    s.ui.layout.panel_padding = 16.0F;
+    s.ui.layout.topbar_height = 48.0F;
     int ms = gal_max_scroll(&s);
     CHECK(ms >= 0, "max scroll non-negative");
     PASS();
@@ -274,14 +274,14 @@ static void test_zoom_pan_clamp(void)
     AppState s = {0};
     s.window_width = 1200;
     s.window_height = 800;
-    s.dpi_scale = 1.0F;
-    s.zoom_level = 1.0F;
-    s.zoom_pan_x = 200.0F;
-    s.zoom_pan_y = 200.0F;
+    s.ui.dpi_scale = 1.0F;
+    s.view.zoom_level = 1.0F;
+    s.view.zoom_pan_x = 200.0F;
+    s.view.zoom_pan_y = 200.0F;
     gal_clamp_zoom_pan(&s);
-    CHECK(s.zoom_pan_x == 0.0F, "pan x reset to 0");
-    CHECK(s.zoom_pan_y == 0.0F, "pan y reset to 0");
-    CHECK(s.zoom_level == 1.0F, "zoom level kept at 1");
+    CHECK(s.view.zoom_pan_x == 0.0F, "pan x reset to 0");
+    CHECK(s.view.zoom_pan_y == 0.0F, "pan y reset to 0");
+    CHECK(s.view.zoom_level == 1.0F, "zoom level kept at 1");
     PASS();
 }
 
@@ -343,10 +343,10 @@ static void test_fullimage_back(void)
 {
     TEST("fullimage hit back button -> gallery mode");
     AppState s = {0};
-    s.view_mode = VIEW_FULLIMAGE;
+    s.view.view_mode = VIEW_FULLIMAGE;
     s.window_width = 1200;
     s.window_height = 800;
-    s.dpi_scale = 1.0F;
+    s.ui.dpi_scale = 1.0F;
     int r = gal_handle_fullimage_click(&s, 50, 35);
     CHECK(r == 1, "click on back region returns 1");
     PASS();
@@ -356,13 +356,13 @@ static void test_fullimage_info_toggle(void)
 {
     TEST("fullimage hit info button -> toggles info_open");
     AppState s = {0};
-    s.view_mode = VIEW_FULLIMAGE;
+    s.view.view_mode = VIEW_FULLIMAGE;
     s.window_width = 1200;
     s.window_height = 800;
-    s.dpi_scale = 1.0F;
+    s.ui.dpi_scale = 1.0F;
     int r = gal_handle_fullimage_click(&s, 1120, 35);
     CHECK(r == 1, "click on info region returns 1");
-    CHECK(s.info_open == 1, "info_open toggled to 1");
+    CHECK(s.ui.info_open == 1, "info_open toggled to 1");
     PASS();
 }
 
@@ -372,12 +372,12 @@ static void test_zoom_clamp(void)
 {
     TEST("zoom level clamps correctly");
     AppState s = {0};
-    s.zoom_level = 10.0F;
+    s.view.zoom_level = 10.0F;
     gal_clamp_zoom_pan(&s);
-    CHECK(s.zoom_level <= 8.0F, "zoom clamped to max 8");
-    s.zoom_level = 0.5F;
+    CHECK(s.view.zoom_level <= 8.0F, "zoom clamped to max 8");
+    s.view.zoom_level = 0.5F;
     gal_clamp_zoom_pan(&s);
-    CHECK(s.zoom_level >= 1.0F, "zoom clamped to min 1");
+    CHECK(s.view.zoom_level >= 1.0F, "zoom clamped to min 1");
     PASS();
 }
 
@@ -387,18 +387,18 @@ static void test_eviction(void)
 {
     TEST("texture eviction sets correct ready states");
     AppState s = {0};
-    s.count = 2;
-    s.images = (ImageEntry *) calloc(2, sizeof(ImageEntry));
-    s.images[0].texture_slot = 0;
-    s.images[0].thumb_requested = 1;
-    s.images[0].state = IMG_STATE_RESIDENT_GPU;
-    s.tex_pool.slot_owner[0] = 0;
-    s.tex_pool.last_used[0] = 0;
+    s.data.count = 2;
+    s.data.images = (ImageEntry *) calloc(2, sizeof(ImageEntry));
+    s.data.images[0].texture_slot = 0;
+    s.data.images[0].thumb_requested = 1;
+    s.data.images[0].state = IMG_STATE_RESIDENT_GPU;
+    s.gpu.tex_pool.slot_owner[0] = 0;
+    s.gpu.tex_pool.last_used[0] = 0;
     r_evict_texture(&s, 0);
-    CHECK(s.images[0].texture_slot == -1, "slot cleared");
-    CHECK(s.images[0].state == IMG_STATE_READY, "state is READY after eviction");
-    CHECK(s.tex_pool.slot_owner[0] == -1, "owner reset");
-    free(s.images);
+    CHECK(s.data.images[0].texture_slot == -1, "slot cleared");
+    CHECK(s.data.images[0].state == IMG_STATE_READY, "state is READY after eviction");
+    CHECK(s.gpu.tex_pool.slot_owner[0] == -1, "owner reset");
+    free(s.data.images);
     PASS();
 }
 
@@ -410,11 +410,11 @@ static void test_full_cache_eviction(void)
     AppState s = {0};
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        s.full_slots[i].texture = (ID3D11Texture2D *) (uintptr_t) (1 + i);
+        s.gpu.full_slots[i].texture = (ID3D11Texture2D *) (uintptr_t) (1 + i);
     }
     int slot = r_alloc_full_image_slot(&s);
     CHECK(slot >= 0 && slot < FULL_CACHE_SIZE, "eviction returned valid slot");
-    CHECK(s.full_slots[slot].texture == NULL, "evicted slot texture is NULL");
+    CHECK(s.gpu.full_slots[slot].texture == NULL, "evicted slot texture is NULL");
     PASS();
 }
 
@@ -424,13 +424,13 @@ static void test_select_full_image_reset(void)
 {
     TEST("select full image resets panning offsets");
     AppState s = {0};
-    s.view_mode = VIEW_FULLIMAGE;
-    s.zoom_level = 2.0F;
-    s.zoom_pan_x = 100.0F;
-    s.zoom_pan_y = 200.0F;
-    s.zoom_level = 1.0F;
+    s.view.view_mode = VIEW_FULLIMAGE;
+    s.view.zoom_level = 2.0F;
+    s.view.zoom_pan_x = 100.0F;
+    s.view.zoom_pan_y = 200.0F;
+    s.view.zoom_level = 1.0F;
     gal_clamp_zoom_pan(&s);
-    CHECK(s.zoom_pan_x == 0.0F && s.zoom_pan_y == 0.0F, "pan reset when zoom==1");
+    CHECK(s.view.zoom_pan_x == 0.0F && s.view.zoom_pan_y == 0.0F, "pan reset when zoom==1");
     PASS();
 }
 

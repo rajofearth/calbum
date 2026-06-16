@@ -30,13 +30,13 @@ static int map_action(DWORD action)
 static DWORD WINAPI fm_thread_proc(LPVOID param)
 {
     AppState *s = (AppState *) param;
-    HANDLE hDir = s->dir_handle;
+    HANDLE hDir = s->worker.dir_handle;
 
     DWORD filter = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_SIZE |
                    FILE_NOTIFY_CHANGE_LAST_WRITE;
 
     // Synchronous ReadDirectoryChangesW polling with stop-event check
-    while (WaitForSingleObject(s->monitor_stop_event, 0) != WAIT_OBJECT_0)
+    while (WaitForSingleObject(s->worker.monitor_stop_event, 0) != WAIT_OBJECT_0)
     {
         char buf[4096];
         DWORD bytes = 0;
@@ -51,7 +51,7 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
                     wcsncpy(fname, fni->FileName, min(fni->FileNameLength / sizeof(wchar_t), MAX_PATH_LEN - 1));
 
                     wchar_t full[MAX_PATH_LEN];
-                    wcsncpy(full, s->current_dir, MAX_PATH_LEN - 1);
+                    wcsncpy(full, s->data.current_dir, MAX_PATH_LEN - 1);
                     size_t len = wcslen(full);
                     if (len && full[len - 1] != L'\\')
                         wcscat(full, L"\\");
@@ -97,55 +97,56 @@ static DWORD WINAPI fm_thread_proc(LPVOID param)
 
 int fm_start_monitor(AppState *s, const wchar_t *directory)
 {
-    if (s->monitoring_active)
+    if (s->worker.monitoring_active)
         return 1;
 
-    s->dir_handle = CreateFileW(directory, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    if (s->dir_handle == INVALID_HANDLE_VALUE)
+    s->worker.dir_handle =
+        CreateFileW(directory, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (s->worker.dir_handle == INVALID_HANDLE_VALUE)
     {
-        s->dir_handle = NULL;
+        s->worker.dir_handle = NULL;
         return 0;
     }
 
-    s->monitor_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
-    s->monitor_thread = CreateThread(NULL, 0, fm_thread_proc, s, 0, NULL);
-    s->monitoring_active = 1;
+    s->worker.monitor_stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    s->worker.monitor_thread = CreateThread(NULL, 0, fm_thread_proc, s, 0, NULL);
+    s->worker.monitoring_active = 1;
     return 1;
 }
 
 void fm_stop_monitor(AppState *s)
 {
-    if (!s->monitoring_active)
+    if (!s->worker.monitoring_active)
         return;
-    s->monitoring_active = 0;
+    s->worker.monitoring_active = 0;
 
     // Signal stop event first
-    if (s->monitor_stop_event)
-        SetEvent(s->monitor_stop_event);
+    if (s->worker.monitor_stop_event)
+        SetEvent(s->worker.monitor_stop_event);
 
     // Cancel any pending ReadDirectoryChangesW so the thread can exit promptly
-    if (s->dir_handle)
-        CancelIoEx(s->dir_handle, NULL);
+    if (s->worker.dir_handle)
+        CancelIoEx(s->worker.dir_handle, NULL);
 
     // Wait for the monitor thread to exit first (before closing handles)
-    if (s->monitor_thread)
+    if (s->worker.monitor_thread)
     {
-        WaitForSingleObject(s->monitor_thread, INFINITE);
-        CloseHandle(s->monitor_thread);
-        s->monitor_thread = NULL;
+        WaitForSingleObject(s->worker.monitor_thread, INFINITE);
+        CloseHandle(s->worker.monitor_thread);
+        s->worker.monitor_thread = NULL;
     }
 
     // Close the directory handle after the thread has exited
-    if (s->dir_handle)
+    if (s->worker.dir_handle)
     {
-        CloseHandle(s->dir_handle);
-        s->dir_handle = NULL;
+        CloseHandle(s->worker.dir_handle);
+        s->worker.dir_handle = NULL;
     }
 
-    if (s->monitor_stop_event)
+    if (s->worker.monitor_stop_event)
     {
-        CloseHandle(s->monitor_stop_event);
-        s->monitor_stop_event = NULL;
+        CloseHandle(s->worker.monitor_stop_event);
+        s->worker.monitor_stop_event = NULL;
     }
 }

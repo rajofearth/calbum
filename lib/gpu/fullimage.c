@@ -7,8 +7,8 @@ FullImageSlot *r_get_full_image_slot(AppState *s, const wchar_t *path)
 {
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        if (s->full_slots[i].texture && _wcsicmp(s->full_slots[i].path, path) == 0)
-            return &s->full_slots[i];
+        if (s->gpu.full_slots[i].texture && _wcsicmp(s->gpu.full_slots[i].path, path) == 0)
+            return &s->gpu.full_slots[i];
     }
     return NULL;
 }
@@ -17,32 +17,32 @@ void r_free_full_image_slot(AppState *s, int i)
 {
     if (i < 0 || i >= FULL_CACHE_SIZE)
         return;
-    if (s->d3d_device)
+    if (s->gpu.d3d_device)
     {
-        SAFE_RELEASE(s->full_slots[i].srv);
-        SAFE_RELEASE(s->full_slots[i].texture);
+        SAFE_RELEASE(s->gpu.full_slots[i].srv);
+        SAFE_RELEASE(s->gpu.full_slots[i].texture);
     }
     else
     {
-        s->full_slots[i].srv = NULL;
-        s->full_slots[i].texture = NULL;
+        s->gpu.full_slots[i].srv = NULL;
+        s->gpu.full_slots[i].texture = NULL;
     }
-    s->full_slots[i].path[0] = L'\0';
-    s->full_slots[i].w = 0;
-    s->full_slots[i].h = 0;
+    s->gpu.full_slots[i].path[0] = L'\0';
+    s->gpu.full_slots[i].w = 0;
+    s->gpu.full_slots[i].h = 0;
 }
 
 int r_alloc_full_image_slot(AppState *s)
 {
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        if (!s->full_slots[i].texture)
+        if (!s->gpu.full_slots[i].texture)
             return i;
     }
 
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
     {
-        if (!fiv_is_in_strip(s, s->full_slots[i].path))
+        if (!fiv_is_in_strip(s, s->gpu.full_slots[i].path))
         {
             r_free_full_image_slot(s, i);
             return i;
@@ -57,9 +57,9 @@ void r_free_full_image(AppState *s)
 {
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
         r_free_full_image_slot(s, i);
-    s->active_full_srv = NULL;
-    if (s->d3d_context)
-        s->d3d_context->lpVtbl->Flush(s->d3d_context);
+    s->gpu.active_full_srv = NULL;
+    if (s->gpu.d3d_context)
+        s->gpu.d3d_context->lpVtbl->Flush(s->gpu.d3d_context);
 }
 
 int r_load_full_image(AppState *s, const wchar_t *path)
@@ -67,7 +67,7 @@ int r_load_full_image(AppState *s, const wchar_t *path)
     FullImageSlot *slot = r_get_full_image_slot(s, path);
     if (slot)
     {
-        s->active_full_srv = slot->srv;
+        s->gpu.active_full_srv = slot->srv;
         return 1;
     }
 
@@ -77,7 +77,7 @@ int r_load_full_image(AppState *s, const wchar_t *path)
         return 0;
 
     int slot_idx = r_alloc_full_image_slot(s);
-    FullImageSlot *new_slot = &s->full_slots[slot_idx];
+    FullImageSlot *new_slot = &s->gpu.full_slots[slot_idx];
 
     D3D11_TEXTURE2D_DESC desc = {0};
     desc.Width = (UINT) w;
@@ -93,11 +93,11 @@ int r_load_full_image(AppState *s, const wchar_t *path)
     init_data.pSysMem = rgba;
     init_data.SysMemPitch = (UINT) (w * 4);
 
-    if (FAILED(s->d3d_device->lpVtbl->CreateTexture2D(s->d3d_device, &desc, &init_data, &new_slot->texture)))
+    if (FAILED(s->gpu.d3d_device->lpVtbl->CreateTexture2D(s->gpu.d3d_device, &desc, &init_data, &new_slot->texture)))
         return 0;
 
-    if (FAILED(s->d3d_device->lpVtbl->CreateShaderResourceView(s->d3d_device, (ID3D11Resource *) new_slot->texture,
-                                                               NULL, &new_slot->srv)))
+    if (FAILED(s->gpu.d3d_device->lpVtbl->CreateShaderResourceView(
+            s->gpu.d3d_device, (ID3D11Resource *) new_slot->texture, NULL, &new_slot->srv)))
     {
         new_slot->texture->lpVtbl->Release(new_slot->texture);
         new_slot->texture = NULL;
@@ -109,6 +109,6 @@ int r_load_full_image(AppState *s, const wchar_t *path)
     new_slot->w = w;
     new_slot->h = h;
 
-    s->active_full_srv = new_slot->srv;
+    s->gpu.active_full_srv = new_slot->srv;
     return 1;
 }

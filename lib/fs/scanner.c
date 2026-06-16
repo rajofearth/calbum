@@ -163,7 +163,7 @@ DWORD WINAPI fs_scan_thread(LPVOID param)
 int fs_scan_directory(const wchar_t *path, AppState *s)
 {
     scan_recursive(path, s);
-    wcsncpy(s->current_dir, path, MAX_PATH_LEN - 1);
-    s->current_dir[MAX_PATH_LEN - 1] = L'\0';
-    return s->count;
+    wcsncpy(s->data.current_dir, path, MAX_PATH_LEN - 1);
+    s->data.current_dir[MAX_PATH_LEN - 1] = L'\0';
+    return s->data.count;
 }
