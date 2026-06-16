@@ -123,7 +123,9 @@ int fiv_is_in_strip(AppState *s, const wchar_t *path)
     if (active_img_idx_in_strip == -1)
         return 0;
 
-    int start, end, num_thumbs;
+    int start;
+    int end;
+    int num_thumbs;
     fiv_strip_bounds(s, active_img_idx_in_strip, s->data.strip_image_count, &start, &end, &num_thumbs);
 
     for (int k = start; k <= end; k++)
@@ -166,7 +168,9 @@ static void fiv_update_preloading(AppState *s, int active_img_idx)
 
                 if (active_img_idx_in_strip != -1)
                 {
-                    int start_strip_idx, end_strip_idx, num_strip_thumbs;
+                    int start_strip_idx;
+                    int end_strip_idx;
+                    int num_strip_thumbs;
                     fiv_strip_bounds(s, active_img_idx_in_strip, s->data.strip_image_count, &start_strip_idx,
                                      &end_strip_idx, &num_strip_thumbs);
 
@@ -187,7 +191,9 @@ static void fiv_update_preloading(AppState *s, int active_img_idx)
             }
             else
             {
-                int start_idx, end_idx, num_thumbs;
+                int start_idx;
+                int end_idx;
+                int num_thumbs;
                 fiv_strip_bounds(s, s->view.selected_index, s->data.count, &start_idx, &end_idx, &num_thumbs);
 
                 for (int i = start_idx; i <= end_idx; i++)
@@ -368,7 +374,10 @@ static void fiv_render_bottom_strip(AppState *s, InstanceData *instances, int *i
                 !s->data.images[img_idx].thumb_requested)
             {
                 s->data.images[img_idx].thumb_requested = 1;
-                aw_request_thumbnail(s, s->data.images[img_idx].path, THUMB_SIZE, s->hwnd);
+                if (!aw_request_thumbnail(s, s->data.images[img_idx].path, THUMB_SIZE, s->hwnd))
+                {
+                    s->data.images[img_idx].thumb_requested = 0; // allow retry next frame
+                }
             }
 
             // Draw selection border if active
@@ -388,12 +397,14 @@ static void fiv_render_bottom_strip(AppState *s, InstanceData *instances, int *i
             }
 
             // Draw thumbnail
+            int tex = s->data.images ? s->data.images[img_idx].texture_slot : -1;
+
             instances[*inst_count] = (InstanceData){0};
             instances[*inst_count].x = tx;
             instances[*inst_count].y = ty;
             instances[*inst_count].w = (float) thumb_w;
             instances[*inst_count].h = (float) thumb_h;
-            instances[*inst_count].tex_index = s->data.images ? s->data.images[img_idx].texture_slot : -1;
+            instances[*inst_count].tex_index = tex;
             instances[*inst_count].opacity = 1.0F;
             instances[*inst_count].corner_radius = 6.0F * s->ui.dpi_scale;
 
@@ -800,7 +811,8 @@ int gal_handle_fullimage_click(AppState *s, int x, int y)
         if (total_images > 0 && active_img_idx_in_strip != -1)
         {
             int num_strip_thumbs;
-            int start_idx, end_idx;
+            int start_idx;
+            int end_idx;
             fiv_strip_bounds(s, active_img_idx_in_strip, total_images, &start_idx, &end_idx, &num_strip_thumbs);
 
             float total_thumbs_w = (float) ((num_strip_thumbs * thumb_w) + ((num_strip_thumbs - 1) * thumb_pad));

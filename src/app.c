@@ -197,7 +197,9 @@ void app_load_folder(AppState *s, const wchar_t *path)
 void app_update_title(AppState *s)
 {
     wchar_t title[MAX_PATH_LEN + 64];
-    swprintf(title, sizeof(title) / sizeof(wchar_t), L"calbum " APP_VERSION_W L" \u2014 %s", s->data.viewing_dir);
+    wchar_t *leaf = wcsrchr(s->data.viewing_dir, L'\\');
+    const wchar_t *display_name = leaf ? leaf + 1 : s->data.viewing_dir;
+    swprintf(title, sizeof(title) / sizeof(wchar_t), L"calbum " APP_VERSION_W L" \u2014 %s", display_name);
     SetWindowTextW(s->hwnd, title);
 }
 

@@ -71,7 +71,8 @@ int r_load_full_image(AppState *s, const wchar_t *path)
         return 1;
     }
 
-    int w = 0, h = 0;
+    int w = 0;
+    int h = 0;
     void *rgba = il_load_full_image(path, &w, &h);
     if (!rgba)
         return 0;

@@ -193,9 +193,9 @@ int r_init(AppState *s)
             UINT32 index = 0;
             BOOL exists = FALSE;
             collection->lpVtbl->FindFamilyName(collection, L"Zed Mono", &index, &exists);
-            if (exists)
+            if (exists) {
                 mono_font = L"Zed Mono";
-            else
+            } else
             {
                 collection->lpVtbl->FindFamilyName(collection, L"Lilex", &index, &exists);
                 if (exists)

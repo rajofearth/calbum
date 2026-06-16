@@ -36,11 +36,12 @@ void r_draw_text_aligned(AppState *s, const wchar_t *text, float x, float y, flo
     // Fast path: cached layouts for single-character icon glyphs
     if (wcslen(text) == 1 && s->txt.dwrite_format_icons == format)
     {
-        IDWriteTextLayout *layout = NULL;
-        if (text[0] == 0xE72B)
+        struct IDWriteTextLayout *layout = NULL;
+        if (text[0] == 0xE72B) {
             layout = s->txt.layout_back;
-        else if (text[0] == 0xE946)
+        } else if (text[0] == 0xE946) {
             layout = s->txt.layout_info;
+}
 
         if (layout)
         {

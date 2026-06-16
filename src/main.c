@@ -183,6 +183,23 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 }
             }
         }
+        else
+        {
+            for (int i = 0; i < g_state.data.count; i++)
+            {
+                if (_wcsicmp(g_state.data.images[i].path, result->path) == 0)
+                {
+                    // Don't overwrite a successful thumbnail with FAILED.
+                    // A duplicate request can fail after the first already succeeded.
+                    if (g_state.data.images[i].state != IMG_STATE_RESIDENT_GPU)
+                    {
+                        g_state.data.images[i].state = IMG_STATE_FAILED;
+                        g_state.data.images[i].thumb_requested = 0;
+                    }
+                    break;
+                }
+            }
+        }
         il_free_bc1_data(result->bc1_data);
         g_state.needs_redraw = 1;
         free(result);
@@ -590,6 +607,7 @@ static void on_keydown(HWND hwnd, int vk)
                 break;
             case VK_HOME:
                 g_state.view.selected_index = 0;
+                g_state.view.scroll_target_y = 0.0F;
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
@@ -597,6 +615,7 @@ static void on_keydown(HWND hwnd, int vk)
             {
                 int limit = g_state.data.grid_items ? g_state.data.grid_item_count : g_state.data.count;
                 g_state.view.selected_index = limit - 1;
+                g_state.view.scroll_target_y = (float) gal_max_scroll(&g_state);
                 g_state.needs_redraw = 1;
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
@@ -642,6 +661,38 @@ static void on_lbutton_down(HWND hwnd, int x, int y)
         g_state.ui.drag_start_scroll_y = g_state.view.scroll_current_y;
         SetCapture(hwnd);
         return;
+    }
+
+    // Check scrollbar track click (click above/below thumb to page up/down)
+    float track_w = 16.0F * g_state.ui.dpi_scale;
+    float track_x = (float) g_state.window_width - track_w;
+
+    if (ms > 0 && (float) x >= track_x && (float) x < track_x + track_w)
+    {
+        float track_h =
+            (float) g_state.window_height - g_state.ui.layout.topbar_height - g_state.ui.layout.panel_padding;
+        float thumb_h = ((float) g_state.window_height / (float) (ms + g_state.window_height)) * track_h;
+        if (thumb_h < 24.0F * g_state.ui.dpi_scale)
+            thumb_h = 24.0F * g_state.ui.dpi_scale;
+
+        float scroll_ratio = (float) ms / (track_h - thumb_h);
+        float thumb_pos = g_state.view.scroll_current_y / scroll_ratio;
+        float thumb_y = g_state.ui.layout.topbar_height + g_state.ui.layout.panel_padding + thumb_pos;
+
+        if ((float) y < thumb_y)
+        {
+            // Click above thumb → page up
+            gal_scroll(&g_state, (float) (g_state.window_height * 0.8F));
+            InvalidateRect(hwnd, NULL, TRUE);
+            return;
+        }
+        if ((float) y > thumb_y + thumb_h)
+        {
+            // Click below thumb → page down
+            gal_scroll(&g_state, (float) (-g_state.window_height * 0.8F));
+            InvalidateRect(hwnd, NULL, TRUE);
+            return;
+        }
     }
 
     int idx;

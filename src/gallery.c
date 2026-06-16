@@ -211,7 +211,10 @@ static void gal_render_grid_thumbnails(AppState *s, InstanceData *instances, int
                 if (s->data.images[img_idx].texture_slot == -1 && !s->data.images[img_idx].thumb_requested)
                 {
                     s->data.images[img_idx].thumb_requested = 1;
-                    aw_request_thumbnail(s, s->data.images[img_idx].path, THUMB_SIZE, s->hwnd);
+                    if (!aw_request_thumbnail(s, s->data.images[img_idx].path, THUMB_SIZE, s->hwnd))
+                    {
+                        s->data.images[img_idx].thumb_requested = 0; // allow retry next frame
+                    }
                 }
 
                 // Draw border behind
@@ -225,15 +228,29 @@ static void gal_render_grid_thumbnails(AppState *s, InstanceData *instances, int
                 instances[*inst_count].corner_radius = s->ui.layout.thumb_radius + (1.0F * s->ui.dpi_scale);
                 (*inst_count)++;
 
+                int tex = TOKEN_DEFAULT;
+                float load_opacity = 1.0F;
+
+                if (s->data.images[img_idx].state == IMG_STATE_RESIDENT_GPU &&
+                    s->data.images[img_idx].texture_slot != -1)
+                {
+                    tex = s->data.images[img_idx].texture_slot;
+                }
+                else
+                {
+                    // Subtle pulse for non-resident thumbnails so user can visually
+                    // distinguish "loading" from "blank"
+                    float pulse = 0.7F + (0.3F * (float) sin((double) s->gpu.tex_pool.frame_counter * 0.15));
+                    load_opacity = pulse;
+                }
+
                 instances[*inst_count] = (InstanceData){0};
                 instances[*inst_count].x = x;
                 instances[*inst_count].y = y;
                 instances[*inst_count].w = thumb_size;
                 instances[*inst_count].h = thumb_size;
-                instances[*inst_count].tex_index = (s->data.images[img_idx].state == IMG_STATE_RESIDENT_GPU) ?
-                                                       s->data.images[img_idx].texture_slot :
-                                                       TOKEN_DEFAULT;
-                instances[*inst_count].opacity = 1.0F;
+                instances[*inst_count].tex_index = tex;
+                instances[*inst_count].opacity = load_opacity;
                 instances[*inst_count].corner_radius = s->ui.layout.thumb_radius;
 
                 if (s->data.images[img_idx].state == IMG_STATE_RESIDENT_GPU &&
@@ -242,6 +259,19 @@ static void gal_render_grid_thumbnails(AppState *s, InstanceData *instances, int
                     s->gpu.tex_pool.last_used[s->data.images[img_idx].texture_slot] = s->gpu.tex_pool.frame_counter;
                 }
                 (*inst_count)++;
+
+                // Warning icon overlay for FAILED state
+                // (must be inside BeginDraw/EndDraw — D2D calls outside are silently dropped
+                //  and put the render target into an error state, breaking all subsequent D2D)
+                if (s->data.images[img_idx].state == IMG_STATE_FAILED)
+                {
+                    s->txt.d2d_rtv->lpVtbl->BeginDraw(s->txt.d2d_rtv);
+                    r_draw_text_aligned(s, L"\u26A0", x + thumb_size - (16.0F * s->ui.dpi_scale),
+                                        y + thumb_size - (16.0F * s->ui.dpi_scale), 16.0F * s->ui.dpi_scale,
+                                        16.0F * s->ui.dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER,
+                                        s->txt.dwrite_format_icons, s->ui.theme.accent);
+                    s->txt.d2d_rtv->lpVtbl->EndDraw(s->txt.d2d_rtv, NULL, NULL);
+                }
             }
         }
 
@@ -471,6 +501,7 @@ static void gal_render_folder_text(AppState *s, const GridLayout *lay, float thu
     static wchar_t cached_dir[MAX_PATH_LEN] = {0};
     static float cached_parent_w = 0.0F;
     static float cached_dpi = 0.0F;
+    static wchar_t cached_display_parent[MAX_PATH_LEN * 2] = {0};
 
     if (wcscmp(cached_dir, s->data.viewing_dir) != 0 || cached_dpi != s->ui.dpi_scale)
     {
@@ -510,38 +541,13 @@ static void gal_render_folder_text(AppState *s, const GridLayout *lay, float thu
         float total_w = r_measure_text_width(s, measure_buf, s->txt.dwrite_format_small);
         float char_w = r_measure_text_width(s, L"x", s->txt.dwrite_format_small);
         cached_parent_w = total_w - char_w;
+
+        wcsncpy(cached_display_parent, display_parent, (MAX_PATH_LEN * 2) - 1);
     }
 
-    // Format display_parent for drawing
-    wchar_t parent_formatted[(MAX_PATH_LEN * 2)] = {0};
-    int pf_idx = 0;
-    for (int p = 0; parent_path[p] != L'\0' && pf_idx < (MAX_PATH_LEN * 2) - 10; p++)
-    {
-        if (parent_path[p] == L'\\')
-        {
-            wcscpy(parent_formatted + pf_idx, L" / ");
-            pf_idx += 3;
-        }
-        else
-        {
-            parent_formatted[pf_idx++] = parent_path[p];
-        }
-    }
-    parent_formatted[pf_idx] = L'\0';
-
-    wchar_t display_parent[(MAX_PATH_LEN * 2) + 32] = {0};
-    if (parent_path[0] != L'\0')
-    {
-        swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / %ls / ", parent_formatted);
-    }
-    else
-    {
-        swprintf(display_parent, (MAX_PATH_LEN * 2) + 32, L"calbum / ");
-    }
-
-    // Draw parent path segment in muted color using system small font
-    r_draw_text_aligned(s, display_parent, text_x, text_y, cached_parent_w + 5.0F, text_h, ALIGN_X_LEFT, ALIGN_Y_CENTER,
-                        s->txt.dwrite_format_small, s->ui.theme.text_muted);
+    // Draw parent path segment in muted color using system small font (from cache)
+    r_draw_text_aligned(s, cached_display_parent, text_x, text_y, cached_parent_w + 5.0F, text_h, ALIGN_X_LEFT,
+                        ALIGN_Y_CENTER, s->txt.dwrite_format_small, s->ui.theme.text_muted);
 
     // Draw active folder name in main color
     float child_max_w = (float) btn_x - text_x - cached_parent_w - 10.0F;
@@ -589,6 +595,24 @@ void gal_render_gallery(HDC hdc, AppState *s)
             s->txt.d2d_rtv->lpVtbl->BeginDraw(s->txt.d2d_rtv);
             r_draw_text_aligned(s, L"Scanning\u2026", 0, 0, (float) s->window_width, (float) s->window_height,
                                 ALIGN_X_CENTER, ALIGN_Y_CENTER, s->txt.dwrite_format, muted);
+            s->txt.d2d_rtv->lpVtbl->EndDraw(s->txt.d2d_rtv, NULL, NULL);
+            r_present(s);
+            return;
+        }
+        // Empty-folder guidance — only render if D3D/D2D is initialized
+        // (first WM_PAINT can arrive before r_init via ShowWindow/UpdateWindow)
+        if (s->gpu.d3d_context)
+        {
+            static InstanceData instances2[MAX_INSTANCES];
+            int inst_count2 = 0;
+            gal_render_topbar(s, instances2, &inst_count2);
+            r_clear_theme(s);
+            r_draw_instances(s, instances2, inst_count2);
+            s->txt.d2d_rtv->lpVtbl->BeginDraw(s->txt.d2d_rtv);
+            r_draw_text_aligned(s, L"No images here \u2014 drop a folder to browse",
+                                ((float) s->window_width * 0.5F) - 200.0F, ((float) s->window_height * 0.5F) - 20.0F,
+                                400.0F, 40.0F, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->txt.dwrite_format_semibold,
+                                s->ui.theme.text_muted);
             s->txt.d2d_rtv->lpVtbl->EndDraw(s->txt.d2d_rtv, NULL, NULL);
         }
         r_present(s);

@@ -423,131 +423,307 @@ These are mechanical refactors with no behavior change but big readability/maint
 
 ## Pass 4 — UX & Visual Polish
 
+> **Codebase delta (vs. original plan):**
+> - AppState was decomposed into sub-structs (commit `317dd61`). Field paths updated below.
+> - Modular restructure (commit `8389c68`) moved some files; paths corrected.
+> - Pass 2 already built a scanning overlay (kept below).
+> - Breadcrumb width caching already exists; only string caching is missing (4.7 trimmed accordingly).
+> - Full-image rendering was fixed (commit `e85b570`) — 4.2/4.5 work on top of a healthy pipeline.
+
+---
+
 ### 4.1 [UX] Render empty state with guidance message
 
-**Files:** `src/gallery.c:147-151`
+**Files:** `src/gallery.c:578-596` (gal_render_gallery)
 
-**What:** Empty folders show a blank window with no top bar or instruction.
+**What:** Empty folders show a blank window with no top bar or instruction. The scanning case already shows "Scanning…" (from Pass 2), but non-scanning empty folders return a blank canvas.
 
 **How:**
-- Remove the early return at L147-151. Instead, draw the top bar, breadcrumb, and a centered message:
-  ```c
-  // Inside gal_render_gallery, after r_clear_theme, replace the empty check:
-  if (total_items == 0) {
-      // Draw top bar
-      instances[inst_count] = (InstanceData){ ... top bar ... };
-      // Draw centered text
-      r_draw_text_aligned(s, L"No images found — drop a folder here",
-          (float)s->window_width * 0.5F - 200.0F, (float)s->window_height * 0.5F - 20.0F,
-          400.0F, 40.0F, ALIGN_X_CENTER, ALIGN_Y_CENTER,
-          s->dwrite_format_semibold, s->theme.text_muted);
-      r_present(s);
-      return;
-  }
-  ```
+Keep the scanning branch as-is. Replace the fall-through return with a proper empty-state render that draws the top bar, breadcrumb, and a centered guidance message:
+
+```c
+// Inside gal_render_gallery, replace the total_items == 0 block
+if (total_items == 0)
+{
+    if (s->worker.scanning)
+    {
+        // ── KEEP existing scanning overlay (Pass 2) ──────────────
+        float muted[4] = {0.663F, 0.686F, 0.737F, 1.0F};
+        s->txt.d2d_rtv->lpVtbl->BeginDraw(s->txt.d2d_rtv);
+        r_draw_text_aligned(s, L"Scanning\u2026", 0, 0,
+            (float)s->window_width, (float)s->window_height,
+            ALIGN_X_CENTER, ALIGN_Y_CENTER,
+            s->txt.dwrite_format, muted);
+        s->txt.d2d_rtv->lpVtbl->EndDraw(s->txt.d2d_rtv, NULL, NULL);
+        r_present(s);
+        return;
+    }
+
+    // ── NEW: empty-folder guidance ───────────────────────────────
+    // Draw top bar + breadcrumb (reuse gal_render_topbar logic)
+    // Then centered message:
+    r_draw_text_aligned(s,
+        L"No images here \u2014 drop a folder to browse",
+        (float)s->window_width * 0.5F - 200.0F,
+        (float)s->window_height * 0.5F - 20.0F,
+        400.0F, 40.0F, ALIGN_X_CENTER, ALIGN_Y_CENTER,
+        s->txt.dwrite_format_semibold, s->ui.theme.text_muted);
+    r_present(s);
+    return;
+}
+```
+
+Note: The top bar is drawn via `gal_render_topbar(s, instances, &inst_count)` — call that before the guidance message. It needs a scratch `InstanceData` array even in this branch since the normal one hasn't been allocated yet.
+
+> **Implementation note:** Guard the D2D/D3D code in the guidance branch behind `if (s->gpu.d3d_context)`. The first `WM_PAINT` can arrive before `r_init` (via `ShowWindow`/`UpdateWindow`), and `r_draw_instances`/D2D calls would crash on NULL pointers. Before `r_init`, just `r_present(s); return;` (the original behavior).
+
+---
 
 ### 4.2 [UX] Use IMG_STATE_FAILED to show broken-image indicator
 
-**Files:** `src/image_loader.c`, `src/gallery.c:249-253`, `src/types.h:267`
+**Files:** `src/main.c:152-191` (on_thumb_complete), `src/gallery.c:206-245` (gal_render_grid_thumbnails)
 
-**What:** `IMG_STATE_FAILED` is defined but never set. Failed thumbnail decodes leave a blank dark square.
+> **Note:** `lib/image/loader.c` replaces old `src/image_loader.c`.
+
+**What:** `IMG_STATE_FAILED` is defined (`types.h:270`) but never set. Failed thumbnail decodes leave a blank dark square (`TOKEN_DEFAULT`).
 
 **How:**
-- In `on_thumb_complete` (`main.c:152-186`), if `result->succeeded == 0`:
-  ```c
-  if (!result->succeeded) {
-      int found_idx = ...; // find the image in s->images
-      if (found_idx != -1) {
-          s->images[found_idx].state = IMG_STATE_FAILED;
-      }
-  }
-  ```
-- In `gal_render_gallery`, when rendering a thumbnail:
-  ```c
-  if (s->images[img_idx].state == IMG_STATE_FAILED) {
-      instances[inst_count].tex_index = TOKEN_DEFAULT; // dark
-      // Also draw a small warning icon via D2D overlay
-  }
-  ```
+
+**Step 1 — Mark failures** in `on_thumb_complete` (`main.c`), add an else branch:
+
+```c
+if (result->succeeded && result->bc1_data)
+{
+    // existing success handling …
+}
+else   // ← NEW: mark as failed
+{
+    for (int i = 0; i < g_state.data.count; i++)
+    {
+        if (_wcsicmp(g_state.data.images[i].path, result->path) == 0)
+        {
+            g_state.data.images[i].state = IMG_STATE_FAILED;
+            g_state.data.images[i].thumb_requested = 0; // allow retry
+            break;
+        }
+    }
+}
+```
+
+**Step 2 — Render failed indicator** in `gal_render_grid_thumbnails` (`gallery.c`), after the existing `TOKEN_DEFAULT` fallback at line 233:
+
+> **Critical:** Must wrap the D2D call in `BeginDraw`/`EndDraw`. D2D drawing outside a BeginDraw/EndDraw pair puts the render target into an error state, silently breaking ALL subsequent D2D rendering (top bar, breadcrumb, sort filter, folder labels).
+
+```c
+// After: instances[...].tex_index = TOKEN_DEFAULT;
+if (s->data.images[img_idx].state == IMG_STATE_FAILED)
+{
+    instances[*inst_count - 1].tex_index = TOKEN_DEFAULT; // already set
+    s->txt.d2d_rtv->lpVtbl->BeginDraw(s->txt.d2d_rtv);
+    // Draw a warning icon via D2D overlay — draw a small ⚠ in the corner
+    r_draw_text_aligned(s, L"\u26A0", x + thumb_size - (16.0F * s->ui.dpi_scale),
+        y + thumb_size - (16.0F * s->ui.dpi_scale),
+        16.0F * s->ui.dpi_scale, 16.0F * s->ui.dpi_scale,
+        ALIGN_X_CENTER, ALIGN_Y_CENTER,
+        s->txt.dwrite_format_icons, s->ui.theme.accent);
+    s->txt.d2d_rtv->lpVtbl->EndDraw(s->txt.d2d_rtv, NULL, NULL);
+}
+```
+
+---
 
 ### 4.3 [UX] Fix Home/End scroll sync
 
-**Files:** `src/main.c:420-432`
+**Files:** `src/main.c:591-602` (on_keydown, gallery branch)
 
-**What:** Home/End change `selected_index` but don't scroll to make it visible.
+**What:** Home/End change `s->view.selected_index` but don't adjust `s->view.scroll_target_y`. The selection moves off-screen.
 
 **How:**
-- After `s->selected_index = 0` (Home), add:
-  ```c
-  s->scroll_target_y = 0.0F;
-  ```
-- After `s->selected_index = limit - 1` (End), add:
-  ```c
-  s->scroll_target_y = (float)gal_max_scroll(s);
-  ```
+
+```c
+case VK_HOME:
+    g_state.view.selected_index = 0;
+    g_state.view.scroll_target_y = 0.0F;          // ← NEW
+    g_state.needs_redraw = 1;
+    InvalidateRect(hwnd, NULL, TRUE);
+    break;
+
+case VK_END:
+{
+    int limit = g_state.data.grid_items ? g_state.data.grid_item_count : g_state.data.count;
+    g_state.view.selected_index = limit - 1;
+    g_state.view.scroll_target_y = (float)gal_max_scroll(&g_state);  // ← NEW
+    g_state.needs_redraw = 1;
+    InvalidateRect(hwnd, NULL, TRUE);
+    break;
+}
+```
+
+---
 
 ### 4.4 [UX] Implement scrollbar track click
 
-**Files:** `src/main.c:467-474`
+**Files:** `src/main.c:636-645` (on_lbutton_down, gallery branch)
 
-**What:** Clicking the scrollbar track (above/below thumb) does nothing.
+**What:** Clicking the scrollbar track (above/below thumb) does nothing — only thumb drag is supported.
 
 **How:**
-- In `on_lbutton_down`, after the scrollbar thumb check, add:
-  ```c
-  // Check if click is on the scrollbar track but not on the thumb
-  float track_x = (float)g_state.window_width - track_w - (4.0F * g_state.dpi_scale);
-  if ((float)x >= track_x && (float)x <= track_x + track_w && (float)y >= track_y && (float)y <= track_y + track_h) {
-      // Check if it's NOT on the thumb
-      if ((float)y < thumb_y) {
-          // Click above thumb → page up
-          gal_scroll(&g_state, (float)(g_state.window_height * 0.8F));
-      } else if ((float)y > thumb_y + thumb_h) {
-          // Click below thumb → page down
-          gal_scroll(&g_state, (float)(-g_state.window_height * 0.8F));
-      }
-  }
-  ```
-  (You'll need to compute `track_x, track_y, track_h, thumb_y, thumb_h` locally from the same formulas used in `gal_render_gallery`.)
+
+After the existing thumb-drag check (line 638), add a track-click branch. Compute track/thumb dimensions from the same formulas used in `gal_render_scrollbar` and `on_mouse_move`:
+
+```c
+// After thumb-drag check (line 645), add:
+
+// Check if click is on the scrollbar track but not on the thumb
+float track_w = 16.0F * g_state.ui.dpi_scale;
+float track_x = (float)g_state.window_width - track_w;
+
+if ((float)x >= track_x && (float)x < track_x + track_w)
+{
+    float track_h = (float)g_state.window_height -
+                    g_state.ui.layout.topbar_height -
+                    g_state.ui.layout.panel_padding;
+    float thumb_h = ((float)g_state.window_height /
+                     (float)(ms + g_state.window_height)) * track_h;
+    if (thumb_h < 24.0F * g_state.ui.dpi_scale)
+        thumb_h = 24.0F * g_state.ui.dpi_scale;
+
+    float scroll_ratio = (float)ms / (track_h - thumb_h);
+    float thumb_pos = g_state.view.scroll_current_y / scroll_ratio;
+    float thumb_y = g_state.ui.layout.topbar_height +
+                    g_state.ui.layout.panel_padding + thumb_pos;
+
+    if ((float)y < thumb_y)
+    {
+        // Click above thumb → page up
+        gal_scroll(&g_state, (float)(g_state.window_height * 0.8F));
+        InvalidateRect(hwnd, NULL, TRUE);
+        return;
+    }
+    else if ((float)y > thumb_y + thumb_h)
+    {
+        // Click below thumb → page down
+        gal_scroll(&g_state, (float)(-g_state.window_height * 0.8F));
+        InvalidateRect(hwnd, NULL, TRUE);
+        return;
+    }
+}
+```
+
+---
 
 ### 4.5 [UX] Add thumbnail loading indicator
 
-**Files:** `src/gallery.c:229-233`, `src/gallery_fullimage.c:340-344`
+**Files:** `src/gallery.c:228-244` (gal_render_grid_thumbnails), `src/gallery_fullimage.c` (strip thumbnails)
 
-**What:** Thumbnails in `IMG_STATE_NEW` show only a dark panel with no indication of loading.
+**What:** Thumbnails in `IMG_STATE_NEW` or `IMG_STATE_LOADING` show only a dark panel (`TOKEN_DEFAULT`) with no indication that content is loading.
+
+> **Implementation note:** The pulsing `TOKEN_PANEL` approach was tested but reverted. Gallery thumbnails use `TOKEN_DEFAULT` (original behavior) because:
+> - Changing non-resident thumbnails from `TOKEN_DEFAULT` (dark) to `TOKEN_PANEL` (panel color) made them appear more conspicuously "blank" to users, especially after texture eviction during full-image viewing.
+> - The pulsing calculation depends on `frame_counter` and `delta_time`, adding unnecessary complexity.
+> - The FAILED-state warning icon (4.2) is the more valuable visual indicator.
 
 **How:**
-- In `gal_render_gallery`, for images in `IMG_STATE_NEW` or `IMG_STATE_LOADING`:
-  - Instead of solid `TOKEN_DEFAULT`, render a subtle pulsing animation using `sin(s->delta_time * accumulated_time)` modulated opacity.
-  - Or draw a small circular progress indicator centered in the cell.
+
+Keep the original `TOKEN_DEFAULT` for non-resident thumbnails. Only restructure the code to add the `IMG_STATE_FAILED` path (shared with 4.2):
+
+```c
+int tex = TOKEN_DEFAULT;
+
+if (s->data.images[img_idx].state == IMG_STATE_RESIDENT_GPU &&
+    s->data.images[img_idx].texture_slot != -1)
+{
+    tex = s->data.images[img_idx].texture_slot;
+}
+
+instances[*inst_count] = (InstanceData){0};
+instances[*inst_count].x = x;
+instances[*inst_count].y = y;
+instances[*inst_count].w = thumb_size;
+instances[*inst_count].h = thumb_size;
+instances[*inst_count].tex_index = tex;
+instances[*inst_count].opacity = 1.0F;
+instances[*inst_count].corner_radius = s->ui.layout.thumb_radius;
+```
+
+For the full-image bottom strip (`gallery_fullimage.c`), keep the original `texture_slot` logic unchanged.
+
+---
 
 ### 4.6 [UX] Truncate window title to leaf name only
 
-**Files:** `src/app.c:156-160`
+**Files:** `src/app.c:197-203` (app_update_title)
 
 **What:** Window title shows full directory path (privacy leak).
 
 **How:**
-- Extract only the leaf folder name from `s->viewing_dir`:
-  ```c
-  wchar_t *leaf = wcsrchr(s->viewing_dir, L'\\');
-  const wchar_t *display_name = leaf ? leaf + 1 : s->viewing_dir;
-  swprintf(title, sizeof(title)/sizeof(wchar_t), L"calbum " APP_VERSION_W L" — %s", display_name);
-  ```
+Extract only the leaf folder name from `s->data.viewing_dir`:
+
+```c
+void app_update_title(AppState *s)
+{
+    wchar_t title[MAX_PATH_LEN + 64];
+    wchar_t *leaf = wcsrchr(s->data.viewing_dir, L'\\');
+    const wchar_t *display_name = leaf ? leaf + 1 : s->data.viewing_dir;
+    swprintf(title, sizeof(title) / sizeof(wchar_t),
+             L"calbum " APP_VERSION_W L" \u2014 %s", display_name);
+    SetWindowTextW(s->hwnd, title);
+}
+```
+
+---
 
 ### 4.7 [UX] Cache breadcrumb formatted string to avoid recomputation
 
-**Files:** `src/gallery.c:475-544`
+**Files:** `src/gallery.c:471-551` (gal_render_topbar)
 
-**What:** The breadcrumb path is formatted twice — once for width measurement, once for rendering.
+> **Note:** Width caching (`cached_dir`, `cached_parent_w`, `cached_dpi`) already exists — added during earlier cleanup. The formatted `display_parent` string is still computed twice (once at line 496 for measurement, once at line 532 for rendering).
+
+**What:** The breadcrumb path string is formatted twice per frame — once for width measurement, once for rendering. Cache it alongside the width.
 
 **How:**
-- Store `display_parent` in the same static cache block alongside `cached_parent_w`:
-  ```c
-  static wchar_t cached_display_parent[MAX_PATH_LEN * 2] = {0};
-  ```
-- In the memoization block, format it once and store both the string and width.
-- Use the cached string directly in the rendering block (lines 547-556).
+
+```c
+// Extend the existing static cache block at gallery.c:471-473
+static wchar_t cached_dir[MAX_PATH_LEN] = {0};
+static float cached_parent_w = 0.0F;
+static float cached_dpi = 0.0F;
+static wchar_t cached_display_parent[MAX_PATH_LEN * 2] = {0};  // ← NEW
+```
+
+In the memoization block (line 475), after building `display_parent`, cache it:
+
+```c
+if (wcscmp(cached_dir, s->data.viewing_dir) != 0 || cached_dpi != s->ui.dpi_scale)
+{
+    wcsncpy(cached_dir, s->data.viewing_dir, MAX_PATH_LEN - 1);
+    cached_dpi = s->ui.dpi_scale;
+
+    // ... existing parent_path / parent_formatted logic ...
+
+    // Build and cache display_parent ONCE
+    wchar_t display_parent[(MAX_PATH_LEN * 2) + 32] = {0};
+    if (parent_path[0] != L'\0')
+        swprintf(display_parent, ... L"calbum / %ls / ", parent_formatted);
+    else
+        swprintf(display_parent, ... L"calbum / ");
+
+    wcsncpy(cached_display_parent, display_parent, MAX_PATH_LEN * 2 - 1);
+
+    // Width measurement (existing logic, unchanged)
+    ...
+}
+```
+
+Then replace the second formatting block at lines 515-540 with just:
+
+```c
+// Draw parent path — use cached string directly
+r_draw_text_aligned(s, cached_display_parent,
+    text_x, text_y, cached_parent_w + 5.0F, text_h,
+    ALIGN_X_LEFT, ALIGN_Y_CENTER,
+    s->txt.dwrite_format_small, s->ui.theme.text_muted);
+```
 
 ---
 
