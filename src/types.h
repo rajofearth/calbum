@@ -32,6 +32,9 @@
 // Custom window messages for inter-thread communication
 #define WM_CALBUM_LOAD_COMPLETE (WM_APP + 1)
 #define WM_CALBUM_FILE_CHANGE (WM_APP + 2)
+#define WM_CALBUM_FULL_LOAD_COMPLETE (WM_APP + 3)
+#define WM_CALBUM_SCAN_PROGRESS (WM_APP + 4)
+#define WM_CALBUM_SCAN_COMPLETE (WM_APP + 5)
 #define THUMB_SIZE 160
 #define THUMB_PADDING 8
 #define GALLERY_PADDING 16
@@ -305,6 +308,7 @@ typedef struct
     wchar_t path[MAX_PATH_LEN];
     int thumb_size;
     HWND target_hwnd;
+    int is_full_image;
 } LoadRequest;
 
 // Result posted back to main thread on thumbnail load completion
@@ -328,6 +332,40 @@ typedef struct
     wchar_t path[MAX_PATH_LEN];
     wchar_t filename[MAX_PATH_LEN];
 } FileChange;
+
+// Result posted back on full-resolution image load completion
+// (Section 2.1 - async WIC decode off main thread)
+typedef struct
+{
+    wchar_t path[MAX_PATH_LEN];
+    void *rgba_data;
+    int w;
+    int h;
+    int succeeded;
+} FullLoadResult;
+
+#define SCAN_BATCH_SIZE 128
+
+typedef struct
+{
+    wchar_t path[MAX_PATH_LEN];
+    wchar_t filename[MAX_PATH_LEN];
+    uint64_t file_size;
+    uint64_t last_modified;
+    uint64_t created_time;
+} ScanEntry;
+
+typedef struct
+{
+    ScanEntry entries[SCAN_BATCH_SIZE];
+    int count;
+} ScanBatch;
+
+typedef struct
+{
+    wchar_t directory[MAX_PATH_LEN];
+    HWND hwnd;
+} ScanParam;
 
 // ─────────────────────────────────────────────────────────────────────
 // Application State — single global struct, zero indirection
@@ -362,6 +400,7 @@ typedef struct
     ID3D11Texture2D *texture_array;
     ID3D11ShaderResourceView *texture_array_srv;
     int last_used[MAX_GPU_TEXTURES];
+    int slot_owner[MAX_GPU_TEXTURES]; // image_index for each slot, or -1
     int frame_counter;
 } GPUTexturePool;
 
@@ -419,6 +458,11 @@ typedef struct AppState
     struct IDWriteTextFormat *dwrite_format_small_semibold;
     struct IDWriteTextFormat *dwrite_format_icons;
     struct IDWriteTextFormat *dwrite_format_icons_large;
+
+    // Cached DWrite text layouts (Section 2.3)
+    struct IDWriteTextLayout *layout_back;
+    struct IDWriteTextLayout *layout_info;
+
     struct ID2D1SolidColorBrush *d2d_brush;
 
     ID3D11VertexShader *vs;
@@ -459,6 +503,11 @@ typedef struct AppState
     HANDLE dir_handle;
     int monitoring_active;
 
+    // Async directory scan state (Section 2.4)
+    int scanning;
+    int scan_progress;
+    HANDLE scan_thread;
+
     // Asset worker thread pool
     HANDLE worker_threads[NUM_WORKERS];
     HANDLE worker_stop_event;
@@ -483,6 +532,7 @@ typedef struct AppState
     FullImageSlot full_slots[FULL_CACHE_SIZE];
     ID3D11ShaderResourceView *active_full_srv;
     double full_load_timer;
+    int full_load_pending;
     float zoom_level;
     float zoom_ui_timer;
 
@@ -523,6 +573,7 @@ void app_populate_grid_items(AppState *s);
 // file_scanner.c
 int fs_scan_directory(const wchar_t *path, AppState *s);
 int fs_has_image_extension(const wchar_t *name);
+DWORD WINAPI fs_scan_thread(LPVOID param);
 
 // image_loader.c
 int il_init_wic(void);
@@ -540,6 +591,7 @@ void fm_stop_monitor(AppState *s);
 int aw_start_workers(AppState *s);
 void aw_stop_workers(AppState *s);
 int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND hwnd);
+int aw_request_full_image(AppState *s, const wchar_t *path, HWND hwnd);
 DWORD WINAPI aw_worker_thread(LPVOID param);
 
 // gallery.c

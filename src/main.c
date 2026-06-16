@@ -152,7 +152,8 @@ static void tick_delta_time(AppState *s)
 static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    LoadResult *result = (LoadResult *) (uintptr_t) lParam; // NOLINT
+    union { LPARAM l; LoadResult *p; } u = { .l = lParam };
+    LoadResult *result = u.p;
     if (result)
     {
         if (result->succeeded && result->bc1_data)
@@ -185,10 +186,154 @@ static void on_thumb_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Full-image async load completion (Section 2.1)
+// ─────────────────────────────────────────────────────────────────────────
+static void on_full_load_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
+{
+    (void) wParam;
+    union { LPARAM l; FullLoadResult *p; } u = { .l = lParam };
+    FullLoadResult *result = u.p;
+    if (result && result->succeeded && result->rgba_data)
+    {
+        // Find which image this is for
+        int found_idx = -1;
+        for (int i = 0; i < g_state.count; i++)
+        {
+            if (_wcsicmp(g_state.images[i].path, result->path) == 0)
+            {
+                found_idx = i;
+                break;
+            }
+        }
+        if (found_idx >= 0)
+        {
+            int active_img_idx =
+                g_state.grid_items ? g_state.grid_items[g_state.selected_index].image_index : g_state.selected_index;
+            if (found_idx == active_img_idx)
+            {
+                // Create GPU texture from RGBA data
+                int slot_idx = r_alloc_full_image_slot(&g_state);
+                if (slot_idx >= 0)
+                {
+                    FullImageSlot *new_slot = &g_state.full_slots[slot_idx];
+                    D3D11_TEXTURE2D_DESC desc = {0};
+                    desc.Width = (UINT) result->w;
+                    desc.Height = (UINT) result->h;
+                    desc.MipLevels = 1;
+                    desc.ArraySize = 1;
+                    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    desc.SampleDesc.Count = 1;
+                    desc.Usage = D3D11_USAGE_IMMUTABLE;
+                    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                    D3D11_SUBRESOURCE_DATA init_data = {0};
+                    init_data.pSysMem = result->rgba_data;
+                    init_data.SysMemPitch = (UINT) (result->w * 4);
+                    HRESULT hr = g_state.d3d_device->lpVtbl->CreateTexture2D(g_state.d3d_device, &desc, &init_data,
+                                                                             &new_slot->texture);
+                    if (SUCCEEDED(hr))
+                    {
+                        hr = g_state.d3d_device->lpVtbl->CreateShaderResourceView(
+                            g_state.d3d_device, (ID3D11Resource *) new_slot->texture, NULL, &new_slot->srv);
+                        if (SUCCEEDED(hr))
+                        {
+                            wcsncpy(new_slot->path, result->path, MAX_PATH_LEN - 1);
+                            new_slot->path[MAX_PATH_LEN - 1] = L'\0';
+                            new_slot->w = result->w;
+                            new_slot->h = result->h;
+                            g_state.active_full_srv = new_slot->srv;
+                        }
+                    }
+                }
+            }
+            // NOTE: rgba_data points to the global g_decode_buffer (static),
+            // which is freed at shutdown. Do NOT free it here.
+            result->rgba_data = NULL;
+            g_state.full_load_pending = 0;
+            g_state.needs_redraw = 1;
+            InvalidateRect(hwnd, NULL, TRUE);
+            free(result);
+        }
+        else
+        {
+            g_state.full_load_pending = 0;
+            g_state.needs_redraw = 1;
+            InvalidateRect(hwnd, NULL, TRUE);
+            if (result) { result->rgba_data = NULL; free(result); }
+        }
+    }
+    else
+    {
+        g_state.full_load_pending = 0;
+        g_state.needs_redraw = 1;
+        InvalidateRect(hwnd, NULL, TRUE);
+        if (result) { result->rgba_data = NULL; free(result); }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Async directory scan progress (Section 2.4)
+// ─────────────────────────────────────────────────────────────────────────
+static void on_scan_progress(HWND hwnd, WPARAM wParam, LPARAM lParam)
+{
+    (void) wParam;
+    union { LPARAM l; ScanBatch *p; } u = { .l = lParam };
+    ScanBatch *batch = u.p;
+    if (!batch)
+        return;
+    for (int i = 0; i < batch->count; i++)
+    {
+        ScanEntry *e = &batch->entries[i];
+        if (!app_append_image_entry(&g_state, e->path, e->filename, e->file_size, e->last_modified, e->created_time))
+            break;
+    }
+    g_state.scan_progress = g_state.count;
+    g_state.needs_redraw = 1;
+    free(batch);
+    InvalidateRect(hwnd, NULL, TRUE);
+}
+
+static void on_scan_complete(HWND hwnd, WPARAM wParam, LPARAM lParam)
+{
+    (void) lParam;
+    g_state.scanning = 0;
+    g_state.scan_progress = (int) wParam;
+
+    if (g_state.scan_thread)
+    {
+        WaitForSingleObject(g_state.scan_thread, INFINITE);
+        CloseHandle(g_state.scan_thread);
+        g_state.scan_thread = NULL;
+    }
+
+    // Allocate grid_items and strip images
+    g_state.grid_item_capacity = (g_state.count * 2) + 256;
+    g_state.grid_items = arena_alloc_array(&g_state.arena, GridItem, g_state.grid_item_capacity);
+    g_state.strip_image_grid_indices = arena_alloc_array(&g_state.arena, int, g_state.grid_item_capacity);
+    g_state.grid_item_count = 0;
+    g_state.strip_image_count = 0;
+
+    gal_apply_sort(&g_state);
+    if (g_state.count > 0)
+        g_state.selected_index = 0;
+
+    app_populate_grid_items(&g_state);
+    gal_update_layout(&g_state);
+    app_update_title(&g_state);
+
+    // Restart background threads
+    fm_start_monitor(&g_state, g_state.current_dir);
+    aw_start_workers(&g_state);
+
+    g_state.needs_redraw = 1;
+    InvalidateRect(hwnd, NULL, TRUE);
+}
+
 static void on_file_changed(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     (void) wParam;
-    FileChange *fc = (FileChange *) (uintptr_t) lParam; // NOLINT
+    union { LPARAM l; FileChange *p; } u = { .l = lParam };
+    FileChange *fc = u.p;
     if (!fc)
         return;
     AppState *s = &g_state;
@@ -621,13 +766,25 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             on_mousewheel(hwnd, GET_WHEEL_DELTA_WPARAM(wParam));
             return 0;
         case WM_DROPFILES:
-            on_drop_files(hwnd, (HDROP) (uintptr_t) wParam); // NOLINT
+        {
+            union { WPARAM w; HDROP p; } ud = { .w = wParam };
+            on_drop_files(hwnd, ud.p);
             return 0;
+        }
         case WM_CALBUM_LOAD_COMPLETE:
             on_thumb_complete(hwnd, wParam, lParam);
             return 0;
         case WM_CALBUM_FILE_CHANGE:
             on_file_changed(hwnd, wParam, lParam);
+            return 0;
+        case WM_CALBUM_FULL_LOAD_COMPLETE:
+            on_full_load_complete(hwnd, wParam, lParam);
+            return 0;
+        case WM_CALBUM_SCAN_PROGRESS:
+            on_scan_progress(hwnd, wParam, lParam);
+            return 0;
+        case WM_CALBUM_SCAN_COMPLETE:
+            on_scan_complete(hwnd, wParam, lParam);
             return 0;
 
         case WM_DWMCOLORIZATIONCOLORCHANGED:
@@ -641,7 +798,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             g_state.dpi_scale = HIWORD(wParam) / 96.0F;
             gal_update_layout_scales(&g_state);
             gal_update_layout(&g_state);
-            RECT *r = (RECT *) (uintptr_t) lParam; // NOLINT
+            union { LPARAM l; RECT *p; } ur = { .l = lParam };
+            RECT *r = ur.p;
             SetWindowPos(hwnd, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             return 0;
@@ -649,7 +807,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
         case WM_GETMINMAXINFO:
         {
-            MINMAXINFO *mmi = (MINMAXINFO *) (uintptr_t) lParam; // NOLINT
+            union { LPARAM l; MINMAXINFO *p; } um = { .l = lParam };
+            MINMAXINFO *mmi = um.p;
             mmi->ptMinTrackSize.x = MIN_WINDOW_WIDTH;
             mmi->ptMinTrackSize.y = MIN_WINDOW_HEIGHT;
             return 0;

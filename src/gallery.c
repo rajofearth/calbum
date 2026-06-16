@@ -5,6 +5,7 @@
 #include "types.h"
 #include "ui.h"
 #include "utils.h"
+#include <d2d1.h>
 #include <math.h>
 
 void gal_update_layout_scales(AppState *s)
@@ -146,6 +147,14 @@ void gal_render_gallery(HDC hdc, AppState *s)
     int total_items = s->grid_items ? s->grid_item_count : s->count;
     if (total_items == 0)
     {
+        if (s->scanning)
+        {
+            float muted[4] = {0.663F, 0.686F, 0.737F, 1.0F};
+            s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+            r_draw_text_aligned(s, L"Scanning\u2026", 0, 0, (float) s->window_width, (float) s->window_height,
+                                ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format, muted);
+            s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
+        }
         r_present(s);
         return;
     }
@@ -391,6 +400,9 @@ void gal_render_gallery(HDC hdc, AppState *s)
         r_draw_instances(s, instances, inst_count);
     }
 
+    // Begin D2D render batch (folder text + breadcrumb + sort text)
+    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+
     // Render Folder text & icons in D2D pass
     if (s->grid_items)
     {
@@ -577,6 +589,8 @@ void gal_render_gallery(HDC hdc, AppState *s)
                             s->dwrite_format_regular, s->theme.text_main);
         }
     }
+
+    s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
 
     r_present(s);
     s->needs_redraw = 0;

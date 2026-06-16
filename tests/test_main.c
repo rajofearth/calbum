@@ -294,6 +294,7 @@ static void test_zoom_and_recovery(void)
     s.images[2].texture_slot = 14;
     s.images[2].state = IMG_STATE_RESIDENT_GPU;
     s.images[2].thumb_requested = 1;
+    s.tex_pool.slot_owner[14] = 2;
 
     r_evict_texture(&s, 14);
     CHECK(s.images[2].texture_slot == -1, "slot reset to -1");
@@ -310,12 +311,24 @@ static void test_zoom_and_recovery(void)
     s.images[1].path = L"large.jpg";
     s.images[1].file_size = 10ULL * 1024ULL * 1024ULL; // 10MB
 
+    // Ring buffer needs a slots array so aw_request_full_image doesn't crash
+    void *ring_slots[RING_CAPACITY];
+    memset(ring_slots, 0, sizeof(ring_slots));
+    s.work_queue.slots = ring_slots;
+    s.work_queue.capacity = RING_CAPACITY;
+    s.work_queue.head = 0;
+    s.work_queue.tail = 0;
+    InitializeCriticalSection(&s.work_queue.lock);
+    s.work_queue.nonempty = CreateEventW(NULL, FALSE, FALSE, NULL);
+
     gal_select_full_image(&s, 0);
     CHECK(s.full_load_timer == 0.0, "small file loaded instantly");
 
     gal_select_full_image(&s, 1);
-    CHECK(s.full_load_timer == 0.15, "large file debounces for 150ms");
+    CHECK(s.full_load_pending == 1, "large file queued for async load");
 
+    DeleteCriticalSection(&s.work_queue.lock);
+    CloseHandle(s.work_queue.nonempty);
     free(s.images);
     PASS();
 

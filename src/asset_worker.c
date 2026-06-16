@@ -58,7 +58,7 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
         void *bc1 = NULL;
         int bc1_size = 0;
 
-        if (req->path[0] != L'\0')
+        if (req->path[0] != L'\0' && !req->is_full_image)
         {
             const wchar_t *path = req->path;
 
@@ -91,6 +91,25 @@ DWORD WINAPI aw_worker_thread(LPVOID param)
                         WriteFile(hFile, bc1, bc1_size, &bytesWritten, NULL);
                         CloseHandle(hFile);
                     }
+                }
+            }
+        }
+        else if (req->is_full_image)
+        {
+            int w = 0;
+            int h = 0;
+            void *rgba = il_load_full_image(req->path, &w, &h);
+            if (req->target_hwnd)
+            {
+                FullLoadResult *result = (FullLoadResult *) malloc(sizeof(FullLoadResult));
+                if (result)
+                {
+                    wcsncpy(result->path, req->path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
+                    result->rgba_data = rgba;
+                    result->w = w;
+                    result->h = h;
+                    result->succeeded = (rgba != NULL);
+                    PostMessageW(req->target_hwnd, WM_CALBUM_FULL_LOAD_COMPLETE, 0, (LPARAM) result);
                 }
             }
         }
@@ -160,6 +179,25 @@ int aw_request_thumbnail(AppState *s, const wchar_t *path, int thumb_size, HWND 
     wcsncpy(req->path, path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
     req->thumb_size = thumb_size;
     req->target_hwnd = hwnd;
+    req->is_full_image = 0;
+
+    if (rb_push(&s->work_queue, req))
+    {
+        return 1;
+    }
+    free(req);
+    return 0;
+}
+
+int aw_request_full_image(AppState *s, const wchar_t *path, HWND hwnd)
+{
+    LoadRequest *req = (LoadRequest *) malloc(sizeof(LoadRequest));
+    if (!req)
+        return 0;
+    wcsncpy(req->path, path, MAX_PATH_LEN - 1)[MAX_PATH_LEN - 1] = L'\0';
+    req->thumb_size = 0;
+    req->target_hwnd = hwnd;
+    req->is_full_image = 1;
 
     if (rb_push(&s->work_queue, req))
     {

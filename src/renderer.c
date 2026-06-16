@@ -253,7 +253,10 @@ int r_init(AppState *s)
     }
 
     for (int i = 0; i < MAX_GPU_TEXTURES; i++)
+    {
         s->tex_pool.last_used[i] = -1;
+        s->tex_pool.slot_owner[i] = -1;
+    }
     s->tex_pool.frame_counter = 0;
 
     for (int i = 0; i < FULL_CACHE_SIZE; i++)
@@ -330,6 +333,26 @@ int r_init(AppState *s)
 
         // Default mapping to keep old code happy
         s->dwrite_format = s->dwrite_format_regular;
+    }
+
+    // Create cached text layouts for static icon glyphs
+    if (s->dwrite_factory && s->dwrite_format_icons)
+    {
+        s->dwrite_factory->lpVtbl->CreateTextLayout(s->dwrite_factory, L"\uE72B", 1, s->dwrite_format_icons, 9999.0F,
+                                                    9999.0F, &s->layout_back);
+        if (s->layout_back)
+        {
+            s->layout_back->lpVtbl->SetTextAlignment(s->layout_back, DWRITE_TEXT_ALIGNMENT_CENTER);
+            s->layout_back->lpVtbl->SetParagraphAlignment(s->layout_back, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+
+        s->dwrite_factory->lpVtbl->CreateTextLayout(s->dwrite_factory, L"\uE946", 1, s->dwrite_format_icons, 9999.0F,
+                                                    9999.0F, &s->layout_info);
+        if (s->layout_info)
+        {
+            s->layout_info->lpVtbl->SetTextAlignment(s->layout_info, DWRITE_TEXT_ALIGNMENT_CENTER);
+            s->layout_info->lpVtbl->SetParagraphAlignment(s->layout_info, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
     }
 
     r_resize(s);
@@ -475,23 +498,19 @@ void r_evict_texture(AppState *s, int slot)
     if (slot < 0 || slot >= MAX_GPU_TEXTURES)
         return;
 
-    for (int i = 0; i < s->count; i++)
+    int img_idx = s->tex_pool.slot_owner[slot];
+    if (img_idx >= 0 && img_idx < s->count && s->images[img_idx].texture_slot == slot)
     {
-        if (s->images[i].texture_slot == slot)
-        {
-            s->images[i].texture_slot = TOKEN_DEFAULT;
-            s->images[i].thumb_requested = 0;     // Reset request status
-            s->images[i].state = IMG_STATE_READY; // Cached on disk
-            break;
-        }
+        s->images[img_idx].texture_slot = -1;
+        s->images[img_idx].thumb_requested = 0;
+        s->images[img_idx].state = IMG_STATE_READY;
     }
-
+    s->tex_pool.slot_owner[slot] = -1;
     s->tex_pool.last_used[slot] = -1;
 }
 
 int r_alloc_texture_slot(AppState *s, int image_index)
 {
-    (void) image_index;
     int best_slot = -1;
     int oldest_time = s->tex_pool.frame_counter + 1;
 
@@ -514,6 +533,7 @@ int r_alloc_texture_slot(AppState *s, int image_index)
         r_evict_texture(s, best_slot);
     }
 
+    s->tex_pool.slot_owner[best_slot] = image_index;
     s->tex_pool.last_used[best_slot] = s->tex_pool.frame_counter;
     return best_slot;
 }
@@ -584,19 +604,12 @@ void r_draw_text_ext(AppState *s, const wchar_t *text, float x, float y, float w
     if (!s->d2d_rtv || !format)
         return;
 
-    ID2D1SolidColorBrush *brush = NULL;
     D2D1_COLOR_F c = {color[0], color[1], color[2], color[3]};
-    s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &c, NULL, &brush);
-    if (!brush)
-        return;
+    s->d2d_brush->lpVtbl->SetColor(s->d2d_brush, &c);
 
     D2D1_RECT_F layoutRect = {x, y, x + w, y + h};
-    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
-    ID2D1RenderTarget_DrawText(s->d2d_rtv, text, (UINT32) wcslen(text), format, &layoutRect, (ID2D1Brush *) brush,
-                               D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
-    s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
-
-    ((IUnknown *) brush)->lpVtbl->Release((IUnknown *) brush);
+    ID2D1RenderTarget_DrawText(s->d2d_rtv, text, (UINT32) wcslen(text), format, &layoutRect,
+                               (ID2D1Brush *) s->d2d_brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
 }
 
 void r_draw_text(AppState *s, const wchar_t *text, float x, float y, float w, float h)
@@ -612,6 +625,32 @@ void r_draw_text_aligned(AppState *s, const wchar_t *text,
     if (!s->d2d_rtv || !s->dwrite_factory || !format)
         return;
 
+    // Fast path: cached layouts for single-character icon glyphs
+    if (wcslen(text) == 1 && s->dwrite_format_icons == format)
+    {
+        IDWriteTextLayout *layout = NULL;
+        if (text[0] == 0xE72B) {
+            layout = s->layout_back;
+        } else if (text[0] == 0xE946) {
+            layout = s->layout_info;
+}
+
+        if (layout)
+        {
+            // Resize cached layout to current button dimensions so center alignment
+            // positions the icon correctly (cached layouts are created at 9999x9999).
+            layout->lpVtbl->SetMaxWidth(layout, w);
+            layout->lpVtbl->SetMaxHeight(layout, h);
+            D2D1_COLOR_F c = {color[0], color[1], color[2], color[3]};
+            s->d2d_brush->lpVtbl->SetColor(s->d2d_brush, &c);
+            D2D1_POINT_2F origin = {x, y};
+            s->d2d_rtv->lpVtbl->DrawTextLayout(s->d2d_rtv, origin, layout, (ID2D1Brush *) s->d2d_brush,
+                                               D2D1_DRAW_TEXT_OPTIONS_NONE);
+            return;
+        }
+    }
+
+    // Fall through to CreateTextLayout for non-cached strings
     IDWriteTextLayout *layout = NULL;
     HRESULT hr = s->dwrite_factory->lpVtbl->CreateTextLayout(s->dwrite_factory, text, (UINT32) wcslen(text), format, w,
                                                              h, &layout);
@@ -621,18 +660,13 @@ void r_draw_text_aligned(AppState *s, const wchar_t *text,
         layout->lpVtbl->SetTextAlignment(layout, (DWRITE_TEXT_ALIGNMENT) align_x);
         layout->lpVtbl->SetParagraphAlignment(layout, (DWRITE_PARAGRAPH_ALIGNMENT) align_y);
 
-        ID2D1SolidColorBrush *brush = NULL;
         D2D1_COLOR_F c = {color[0], color[1], color[2], color[3]};
-        s->d2d_rtv->lpVtbl->CreateSolidColorBrush(s->d2d_rtv, &c, NULL, &brush);
-        if (brush)
-        {
-            s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
-            D2D1_POINT_2F origin = {x, y};
-            s->d2d_rtv->lpVtbl->DrawTextLayout(s->d2d_rtv, origin, layout, (ID2D1Brush *) brush,
-                                               D2D1_DRAW_TEXT_OPTIONS_NONE);
-            s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
-            ((IUnknown *) brush)->lpVtbl->Release((IUnknown *) brush);
-        }
+        s->d2d_brush->lpVtbl->SetColor(s->d2d_brush, &c);
+
+        D2D1_POINT_2F origin = {x, y};
+        s->d2d_rtv->lpVtbl->DrawTextLayout(s->d2d_rtv, origin, layout, (ID2D1Brush *) s->d2d_brush,
+                                           D2D1_DRAW_TEXT_OPTIONS_NONE);
+
         ((IUnknown *) layout)->lpVtbl->Release((IUnknown *) layout);
     }
 }
@@ -679,6 +713,11 @@ void r_shutdown(AppState *s)
         s->swap_chain->lpVtbl->Release(s->swap_chain);
     if (s->d3d_context)
         s->d3d_context->lpVtbl->Release(s->d3d_context);
+    if (s->layout_back)
+        ((IUnknown *) s->layout_back)->lpVtbl->Release((IUnknown *) s->layout_back);
+    if (s->layout_info)
+        ((IUnknown *) s->layout_info)->lpVtbl->Release((IUnknown *) s->layout_info);
+
     if (s->d2d_brush)
         ((IUnknown *) s->d2d_brush)->lpVtbl->Release((IUnknown *) s->d2d_brush);
     if (s->dwrite_format_regular)

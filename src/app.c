@@ -89,23 +89,40 @@ void app_load_folder(AppState *s, const wchar_t *path)
     fm_stop_monitor(s);
     aw_stop_workers(s);
 
-    // ── 2. Drain any in-flight LoadResults from the message queue ─────
+    // ── 2. Drain any in-flight messages (thumb, full, scan, file change) ─
     MSG msg;
-    while (PeekMessageW(&msg, s->hwnd, WM_CALBUM_LOAD_COMPLETE, WM_CALBUM_LOAD_COMPLETE, PM_REMOVE))
+    while (PeekMessageW(&msg, s->hwnd, WM_CALBUM_LOAD_COMPLETE, WM_CALBUM_SCAN_COMPLETE, PM_REMOVE))
     {
-        LoadResult *result = (LoadResult *) (uintptr_t) msg.lParam; // NOLINT(performance-no-int-to-ptr)
-        if (result && result->bc1_data)
+        if (msg.message == WM_CALBUM_LOAD_COMPLETE)
         {
-            il_free_bc1_data(result->bc1_data);
+            union { LPARAM l; LoadResult *p; } u = { .l = msg.lParam };
+            LoadResult *result = u.p;
+            if (result && result->bc1_data)
+                il_free_bc1_data(result->bc1_data);
+            free(result);
         }
-        free(result);
-    }
-
-    // ── 2b. Drain any in-flight FileChange messages ─────────────────────
-    while (PeekMessageW(&msg, s->hwnd, WM_CALBUM_FILE_CHANGE, WM_CALBUM_FILE_CHANGE, PM_REMOVE))
-    {
-        FileChange *fc = (FileChange *) (uintptr_t) msg.lParam;
-        free(fc);
+        else if (msg.message == WM_CALBUM_FILE_CHANGE)
+        {
+            union { LPARAM l; FileChange *p; } u = { .l = msg.lParam };
+            FileChange *fc = u.p;
+            free(fc);
+        }
+        else if (msg.message == WM_CALBUM_FULL_LOAD_COMPLETE)
+        {
+            union { LPARAM l; FullLoadResult *p; } u = { .l = msg.lParam };
+            FullLoadResult *result = u.p;
+            if (result)
+            {
+                result->rgba_data = NULL;
+                free(result);
+            }
+        }
+        else if (msg.message == WM_CALBUM_SCAN_PROGRESS)
+        {
+            union { LPARAM l; ScanBatch *p; } u = { .l = msg.lParam };
+            ScanBatch *batch = u.p;
+            free(batch);
+        }
     }
 
     // ── 3. Free old image resources ──────────────────────────────────
@@ -126,44 +143,45 @@ void app_load_folder(AppState *s, const wchar_t *path)
     s->count = s->capacity = 0;
     s->images = NULL;
     s->work_queue.head = s->work_queue.tail = 0;
+    arena_reset(&s->nav_arena);
 
     // ── 5. Reset view state ──────────────────────────────────────────
     s->view_mode = VIEW_GALLERY;
     s->selected_index = -1;
     s->scroll_target_y = s->scroll_current_y = 0.0F;
+    s->full_load_timer = 0.0;
+    s->full_load_pending = 0;
     s->needs_redraw = 1;
 
-    // ── 6. Scan the new folder ───────────────────────────────────────
-    fs_scan_directory(path, s);
-
-    // Allocate s->grid_items and s->strip_image_grid_indices capacity
-    s->grid_item_capacity = (s->count * 2) + 256;
-    s->grid_items = arena_alloc_array(&s->arena, GridItem, s->grid_item_capacity);
-    s->strip_image_grid_indices = arena_alloc_array(&s->arena, int, s->grid_item_capacity);
-    s->grid_item_count = 0;
-    s->strip_image_count = 0;
-
-    gal_apply_sort(s);
-    if (s->count > 0)
-        s->selected_index = 0;
-
-    // Initialize viewing directory to current directory
-    wcsncpy(s->viewing_dir, s->current_dir, MAX_PATH_LEN - 1);
+    // ── 6. Set directory and start async scan thread ────────────────
+    wcsncpy(s->current_dir, path, MAX_PATH_LEN - 1);
+    s->current_dir[MAX_PATH_LEN - 1] = L'\0';
+    wcsncpy(s->viewing_dir, path, MAX_PATH_LEN - 1);
     s->viewing_dir[MAX_PATH_LEN - 1] = L'\0';
-    app_populate_grid_items(s);
 
-    // ── 7. Restart background threads (clean state) ──────────────────
-    fm_start_monitor(s, path);
-    aw_start_workers(s);
+    s->scanning = 1;
+    s->scan_progress = 0;
+    ScanParam *sp = (ScanParam *) malloc(sizeof(ScanParam));
+    if (sp)
+    {
+        wcsncpy(sp->directory, path, MAX_PATH_LEN - 1);
+        sp->directory[MAX_PATH_LEN - 1] = L'\0';
+        sp->hwnd = s->hwnd;
+        s->scan_thread = CreateThread(NULL, 0, fs_scan_thread, sp, 0, NULL);
+        if (!s->scan_thread)
+        {
+            s->scanning = 0;
+            free(sp);
+        }
+    }
 
     gal_update_layout(s);
-    app_update_title(s);
 }
 
 void app_update_title(AppState *s)
 {
     wchar_t title[MAX_PATH_LEN + 64];
-    wsprintfW(title, L"calbum " APP_VERSION_W L" — %s", s->viewing_dir);
+    swprintf(title, sizeof(title) / sizeof(wchar_t), L"calbum " APP_VERSION_W L" \u2014 %s", s->viewing_dir);
     SetWindowTextW(s->hwnd, title);
 }
 

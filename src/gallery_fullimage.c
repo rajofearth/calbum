@@ -3,6 +3,7 @@
 // =========================================================================
 #include "types.h"
 #include "ui.h"
+#include <d2d1.h>
 #include <math.h>
 
 void gal_select_full_image(AppState *s, int index)
@@ -40,12 +41,14 @@ void gal_select_full_image(AppState *s, int index)
         }
         else
         {
-            s->full_load_timer = 0.15; // 150ms debounce for files >= 2MB
+            // Async load for large files (Section 2.1)
+            s->full_load_pending = 1;
+            aw_request_full_image(s, e->path, s->hwnd);
         }
     }
     else
     {
-        s->full_load_timer = 0.15;
+        s->full_load_pending = 1;
     }
     s->needs_redraw = 1;
 }
@@ -86,7 +89,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     }
 
     // Try loading full-resolution image when debounce delay has expired
-    if (s->images && s->full_load_timer <= 0.0)
+    // (skip synchronous load if async load is pending — Section 2.1)
+    if (s->images && s->full_load_timer <= 0.0 && !s->full_load_pending)
     {
         if (r_load_full_image(s, s->images[active_img_idx].path))
         {
@@ -426,12 +430,27 @@ void gal_render_fullimage(HDC hdc, AppState *s)
     // Draw all D3D11 geometry
     r_draw_instances(s, instances, inst_count);
 
+    // Begin D2D render batch
+    s->d2d_rtv->lpVtbl->BeginDraw(s->d2d_rtv);
+
     // Draw Back and Info Button text
     r_draw_text_aligned(s, L"\uE72B", 20.0F * s->dpi_scale, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale,
                         30.0F * s->dpi_scale, ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons,
                         s->theme.text_main);
     r_draw_text_aligned(s, L"\uE946", info_btn_x, 20.0F * s->dpi_scale, 80.0F * s->dpi_scale, 30.0F * s->dpi_scale,
                         ALIGN_X_CENTER, ALIGN_Y_CENTER, s->dwrite_format_icons, s->theme.text_main);
+
+    // If full image is still loading asynchronously, show loading indicator
+    if (s->full_load_pending)
+    {
+        FullImageSlot *ls = s->images ? r_get_full_image_slot(s, s->images[active_img_idx].path) : NULL;
+        if (!ls || !ls->srv)
+        {
+            float muted[4] = {0.663F, 0.686F, 0.737F, 1.0F};
+            r_draw_text_aligned(s, L"Loading\u2026", main_x, main_y, main_w, main_h, ALIGN_X_CENTER, ALIGN_Y_CENTER,
+                                s->dwrite_format, muted);
+        }
+    }
 
     // Draw Zoom Level badge text if active
     if (s->zoom_ui_timer > 0.0F && s->zoom_level > 1.0F)
@@ -441,11 +460,7 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         float by = 20.0F * s->dpi_scale;
         float bw = 120.0F * s->dpi_scale;
         float bh = 30.0F * s->dpi_scale;
-        POINT m_pt;
-        GetCursorPos(&m_pt);
-        ScreenToClient(s->hwnd, &m_pt);
-        int hovered =
-            ((float) m_pt.x >= bx && (float) m_pt.x <= bx + bw && (float) m_pt.y >= by && (float) m_pt.y <= by + bh);
+        int hovered = ((float) pt.x >= bx && (float) pt.x <= bx + bw && (float) pt.y >= by && (float) pt.y <= by + bh);
         wchar_t zoom_text[64];
         if (hovered)
         {
@@ -571,6 +586,8 @@ void gal_render_fullimage(HDC hdc, AppState *s)
         r_draw_text_aligned(s, line, info_x + pad, info_y + pad + (item_h * 6.2F), info_w - (pad * 2.0F), item_h,
                             ALIGN_X_LEFT, ALIGN_Y_CENTER, s->dwrite_format_mono, s->theme.text_main);
     }
+
+    s->d2d_rtv->lpVtbl->EndDraw(s->d2d_rtv, NULL, NULL);
 
     r_present(s);
     s->needs_redraw = 0;

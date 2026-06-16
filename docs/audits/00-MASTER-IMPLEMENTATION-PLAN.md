@@ -152,9 +152,9 @@ These are the highest priority: they can crash the program, cause data races, or
 
 These are the biggest impacts on user experience: frame freezes, unresponsive window, and GPU thrashing.
 
-### 2.1 [UX/PERF] Move full-image WIC decode off main thread
+### 2.1 [UX/PERF] Move full-image WIC decode off main thread ✅ DONE
 
-**Files:** `src/renderer.c:854-908`, `src/gallery_fullimage.c:89-176`, `src/main.c` (message handling), `src/types.h` (new message)
+**Files:** `src/types.h`, `src/asset_worker.c`, `src/gallery_fullimage.c:8-51,69-557`, `src/main.c`, `src/image_loader.c` (noted: static decode buffer)
 
 **What:** `r_load_full_image()` calls `il_load_full_image()` synchronously on the main thread, blocking rendering for 100-500+ms while JPEG/RAW decompression happens. This is the single biggest performance issue.
 
@@ -177,7 +177,9 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
    - Otherwise, call `aw_request_full_image` + set a pending flag
 5. In `gal_render_fullimage`, if the full image is not loaded yet, render a "Loading..." placeholder
 
-### 2.2 [PERF] Cache D2D brush and use single BeginDraw/EndDraw per frame
+**⚠️ Learning:** `il_load_full_image` returns a pointer to a **global static decode buffer** (`g_decode_buffer`), NOT malloc'd memory. The `on_full_load_complete` handler must NOT call `free()` on this buffer. The pointer is set to NULL after texture creation to avoid double-free risk.
+
+### 2.2 [PERF] Cache D2D brush and use single BeginDraw/EndDraw per frame ✅ DONE
 
 **Files:** `src/renderer.c:579-604, 606-636`, `src/gallery.c`, `src/gallery_fullimage.c`
 
@@ -191,7 +193,9 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
    - In `gal_render_fullimage`: BeginDraw at ~line 405 (after blur-panel D3D draw), EndDraw at ~line 553 (before present).
 4. Remove individual BeginDraw/EndDraw from both `r_draw_text_ext` and `r_draw_text_aligned`.
 
-### 2.3 [PERF] Cache IDWriteTextLayout for static strings
+**⚠️ Learning:** All D2D text calls must be inside the BeginDraw/EndDraw pair. In `gal_render_gallery`, folder icon/text D2D calls (for `ITEM_FOLDER` grid items) happened before the original BeginDraw point. BeginDraw was moved earlier to wrap all D2D output.
+
+### 2.3 [PERF] Cache IDWriteTextLayout for static strings ✅ DONE
 
 **Files:** `src/renderer.c:610-636, 910-930`, `src/gallery.c`, `src/gallery_fullimage.c`
 
@@ -208,7 +212,9 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 3. For `r_measure_text_width`:
    - Cache the breadcrumb text layout alongside the width (already partially cached)
 
-### 2.4 [UX/PERF] Make directory scan asynchronous with progress feedback
+**⚠️ Learning:** Cached layouts are created with 9999×9999 virtual dimensions at init. When drawing, `SetMaxWidth`/`SetMaxHeight` must be called to resize the layout to the actual button dimensions — otherwise center alignment positions the icon at the center of the huge virtual box (off-screen).
+
+### 2.4 [UX/PERF] Make directory scan asynchronous with progress feedback ✅ DONE
 
 **Files:** `src/file_scanner.c`, `src/app.c:130`, `src/main.c`, `src/types.h`
 
@@ -235,7 +241,7 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
    - Return immediately (the message loop handles scan results)
 5. Handle WM_CALBUM_SCAN_PROGRESS and WM_CALBUM_SCAN_COMPLETE messages in the window proc
 
-### 2.5 [PERF] Add reverse mapping for texture slot eviction
+### 2.5 [PERF] Add reverse mapping for texture slot eviction ✅ DONE
 
 **Files:** `src/renderer.c:471-488`
 
@@ -260,7 +266,7 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
   s->tex_pool.last_used[slot] = -1;
   ```
 
-### 2.6 [PERF] Increase MAX_GPU_TEXTURES to reduce LRU thrashing
+### 2.6 [PERF] Increase MAX_GPU_TEXTURES to reduce LRU thrashing ✅ DONE (pre-existing)
 
 **Files:** `src/types.h:335`
 
@@ -270,7 +276,9 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 - Change `#define MAX_GPU_TEXTURES 100` to `#define MAX_GPU_TEXTURES 512`
 - Memory cost: 512 × (160/4) × (160/4) × 8 = 512 × 40 × 40 × 8 = 6.5 MB of GPU memory — negligible
 
-### 2.7 [PERF] Eliminate redundant GetCursorPos calls
+**Note:** Already at `1024` when Pass 2 started — likely bumped during Pass 1. No change needed.
+
+### 2.7 [PERF] Eliminate redundant GetCursorPos calls ✅ DONE
 
 **Files:** `src/gallery_fullimage.c:217-219,424-427`
 
@@ -281,9 +289,9 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 - Reuse it for the zoom badge hover check at line 424
 - Call `GetCursorPos` once at the top of `gal_render_fullimage`
 
-### 2.8 [CQ/PERF] Replace wsprintfW with swprintf
+### 2.8 [CQ/PERF] Replace wsprintfW with swprintf ✅ DONE
 
-**Files:** `src/app.c:158`
+**Files:** `src/app.c:175`
 
 **What:** `wsprintfW` has no buffer size limit. Replace with `swprintf` for safety.
 
@@ -291,6 +299,24 @@ These are the biggest impacts on user experience: frame freezes, unresponsive wi
 ```c
 swprintf(title, sizeof(title)/sizeof(wchar_t), L"calbum " APP_VERSION_W L" — %s", s->viewing_dir);
 ```
+
+---
+
+## Pass 2 Completion Notes
+
+### Scope Changes (vs. original plan)
+
+- **2.1** — Extended `LoadRequest` with `is_full_image` flag and reused the existing `work_queue` ring buffer instead of creating a separate queue. Added `FullLoadResult` struct (analogous to `LoadResult`). Small files (<2MB) still load synchronously via `r_load_full_image` as planned.
+- **2.4** — Used `ScanBatch` (128-entry batches) posted via `PostMessage` rather than individual items. Post-scan logic (grid_items allocation, sort, monitor/worker restart) moved to `on_scan_complete` handler. Existing `fs_scan_directory` preserved for test compatibility.
+- **2.6** — Already at `1024` (plan said change `100`→`512`). No action needed.
+
+### Cross-Cutting Observations
+
+1. **Static decode buffer pitfall:** `il_load_full_image` returns a pointer to `g_decode_buffer` — a single 16MB buffer allocated at init. This is NOT per-call malloc'd memory. Async handlers must not call `free()` on it. This caused a crash that only manifests when async full-image loads complete.
+2. **D2D BeginDraw boundary creep:** Removing per-call BeginDraw/EndDraw from text functions requires all call sites to be audited. Missed D2D calls outside the wrapper silently produce no output — no compiler warning.
+3. **Cached layout dimensions:** `IDWriteTextLayout` cached-at-init objects need `SetMaxWidth`/`SetMaxHeight` before each use when the drawing dimensions vary per-frame.
+4. **Test isolation:** The `gal_select_full_image` test needed ring buffer initialization (slots array, event handle) to not crash when `aw_request_full_image` tries to push to the work queue.
+5. **Scan thread recursion:** The background scan thread cannot use the arena (it's reset in `app_load_folder` before the thread starts). All results are batched and posted to the main thread which does arena allocation.
 
 ---
 
